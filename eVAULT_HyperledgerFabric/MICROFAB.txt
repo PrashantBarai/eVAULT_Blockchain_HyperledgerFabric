@@ -1,20 +1,32 @@
-MICROFAB_CONFIG='{
-"port": 8080,
-"endorsing_organizations":[
 {
-"name": "ProducersOrg"
-},
-{
-"name": "SellersOrg"
+  "port": 9090,
+  "endorsing_organizations": [
+    {
+      "name": "LawyersOrg"
+    },
+    {
+      "name": "RegistrarsOrg"
+    },
+    {
+      "name": "StampReportersOrg"
+    },
+    {
+      "name": "BenchClerksOrg"
+    },
+    {
+      "name": "JudgesOrg"
+    }
+  ],
+  "channels": [
+    {
+      "name": "evault-channel",
+      "endorsing_organizations": [
+        "LawyersOrg",
+        "RegistrarsOrg",
+        "StampReportersOrg",
+        "BenchClerksOrg",
+        "JudgesOrg"
+      ]
+    }
+  ]
 }
-],
-"channels":[
-{
-"name": "mango-channel",
-"endorsing_organizations":[
-"ProducersOrg",
-"SellersOrg"
-]
-}
-]
-}'
