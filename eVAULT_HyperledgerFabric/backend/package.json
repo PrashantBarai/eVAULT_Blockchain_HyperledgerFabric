@@ -12,29 +12,24 @@
     "lint": "eslint .",
     "pretest": "npm run lint",
     "test": "nyc mocha --recursive",
-    "dev": "vite",
     "start": "fabric-chaincode-node start --peer.address localhost:9090 --chaincode-id-name lawyer-contract"
   },
   "engineStrict": true,
-  "author": "John Doe",
+  "author": "PrashantBarai",
   "license": "Apache-2.0",
   "dependencies": {
     "fabric-contract-api": "^2.4.1",
-    "fabric-shim": "^2.4.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "fabric-shim": "^2.4.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react-swc": "^3.7.2",
-    "chai": "^4.2.0",
-    "chai-as-promised": "^7.1.1",
-    "eslint": "^8.7.0",
-    "mocha": "^9.2.0",
+    "chai": "5.1.2",
+    "chai-as-promised": "8.0.1",
+    "eslint": "9.18.0",
+    "mocha": "11.1.0",
     "nodemon": "^3.1.9",
-    "nyc": "^15.0.0",
-    "sinon": "^9.0.1",
-    "sinon-chai": "^3.5.0",
-    "vite": "^6.0.7",
+    "nyc": "17.1.0",
+    "sinon": "19.0.2",
+    "sinon-chai": "4.0.0",
     "winston": "^3.2.1"
   },
   "nyc": {
