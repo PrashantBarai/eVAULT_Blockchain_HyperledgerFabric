@@ -1,0 +1,3 @@
+/venv/
+/evault/*/__pycache__/
+/evault/*/migrations/
