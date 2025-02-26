@@ -4,9 +4,7 @@ import os
 
 
 load_dotenv()
-
 JWT = os.getenv('JWT') 
-
 def pin_file_to_ipfs(file_name):
     try:
         url = "https://api.pinata.cloud/pinning/pinFileToIPFS"

@@ -41,9 +41,13 @@ try:
 except couchdb.http.PreconditionFailed:
     cases_db = server["cases"]
 
+    
+    
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup_page():
@@ -55,11 +59,9 @@ def signup_page():
         aadhar = request.form.get("aadhar")
         credit_card = request.form.get("credit_card")
         role = request.form.get("role")
-
         for user in users_db:
             if users_db[user]["email"] == email:
                 return redirect(url_for("signup_page"))
-
         hashed_password = generate_password_hash(password)
         users_db.save({
             "username": username,
@@ -70,10 +72,9 @@ def signup_page():
             "credit_card": credit_card,
             "role": role
         })
-
         return redirect(url_for("login"))
-
     return render_template("signup.html")
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -144,12 +145,44 @@ def lawyer_dashboard(user_id):
     return render_template("lawyer_dashboard.html", user=user, cases=lawyer_cases)
 
 
-@app.route('/send-to-registrar/<case_id>', methods=['GET','POST'])
+
+@app.route("/registrar/<user_id>", methods=["GET"])
+def registrar_dashboard(user_id):
+    if "user_id" not in session or session["user_id"] != user_id:
+        return redirect(url_for("login"))
+    user = users_db.get(user_id, {})
+    assigned_cases = [cases_db[case_id] for case_id in user.get("cases", [])]
+    return render_template("registrar_dashboard.html", user=user, assigned_cases=assigned_cases)
+
+
+
+
+@app.route('/send-to-registrar/<case_id>', methods=['POST'])
 def send_to_registrar(case_id):
-    
-    # Logic to update the case status in the database (e.g., mark it as "Sent to Registrar")
-    print(f"Case {case_id} sent to registrar")  # Replace with actual database logic
-    return redirect(url_for('lawyer_dashboard'))
+    case = cases_db.get(case_id)
+    if not case:
+        return "Case not found", 404
+    registrars = [
+        users_db[uid] for uid in users_db
+        if users_db[uid].get("role") == "registrar"
+    ]
+
+    if not registrars:
+        return "No registrars available", 500
+
+    selected_registrar = min(registrars, key=lambda r: len(r.get("cases", [])))
+
+    if "cases" not in selected_registrar:
+        selected_registrar["cases"] = []
+
+    selected_registrar["cases"].append(case_id)  # Save only case ID
+    users_db.save(selected_registrar)  
+    case["status"] = "Sent to Registrar"
+    case["assigned_registrar"] = selected_registrar["_id"]
+    cases_db.save(case)  
+
+    return redirect(url_for('lawyer_dashboard', user_id=session["user_id"]))
+
 
 
 
