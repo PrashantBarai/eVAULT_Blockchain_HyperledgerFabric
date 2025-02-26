@@ -1,3 +1,5 @@
 /venv/
-/evault/*/__pycache__/
-/evault/*/migrations/
+/frontend/
+/uploads/
+.env
+secrets

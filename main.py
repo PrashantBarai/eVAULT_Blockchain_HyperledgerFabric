@@ -1,20 +1,49 @@
-from flask import Flask, request, render_template, redirect, url_for, session, flash
-import pymongo
+from flask import Flask, request, render_template, redirect, url_for, session
+import couchdb
+import os
 from werkzeug.security import generate_password_hash, check_password_hash
-from bson import ObjectId
+from dotenv import load_dotenv
+from urllib.parse import quote
+from werkzeug.utils import secure_filename
+import requests
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key"  
+app.secret_key = "your_secret_key"
 
-client = pymongo.MongoClient("mongodb://localhost:27017/")
-db = client["evault"]
-users_collection = db["users"]
-cases_collection = db["cases"]
+COUCH_PASS = os.getenv("COUCH_PASS")
+COUCH_PASS_ENCODED = quote(COUCH_PASS, safe='')
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {"pdf", "docx", "jpg", "png"}
+
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+COUCHDB_URL = f"http://ammar:{COUCH_PASS_ENCODED}@127.0.0.1:5984/"
+JWT = os.getenv('JWT') 
+PINATA_API_KEY = os.getenv("PINATA_API_KEY")
+PINATA_SECRET_API_KEY = os.getenv("PINATA_SECRET_API_KEY")
+PINATA_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS"
+
+server = couchdb.Server(COUCHDB_URL)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+try:
+    users_db = server.create("users")
+except couchdb.http.PreconditionFailed:
+    users_db = server["users"]
+
+try:
+    cases_db = server.create("cases")
+except couchdb.http.PreconditionFailed:
+    cases_db = server["cases"]
 
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup_page():
@@ -27,17 +56,12 @@ def signup_page():
         credit_card = request.form.get("credit_card")
         role = request.form.get("role")
 
-        if not all([username, email, password, phone, aadhar, credit_card, role]):
-            print("All fields are required!")
-            return redirect(url_for("signup_page"))
-
-        if users_collection.find_one({"email": email}):
-            print("Email already exists!")
-            return redirect(url_for("signup_page"))
+        for user in users_db:
+            if users_db[user]["email"] == email:
+                return redirect(url_for("signup_page"))
 
         hashed_password = generate_password_hash(password)
-
-        users_collection.insert_one({
+        users_db.save({
             "username": username,
             "email": email,
             "password": hashed_password,
@@ -47,35 +71,26 @@ def signup_page():
             "role": role
         })
 
-        print("Account created successfully! You can now log in.")
         return redirect(url_for("login"))
 
     return render_template("signup.html")
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-
-        if not username or not password:
-            flash("Email and password are required!", "error")
-            return redirect(url_for("login"))
-
-        user = users_collection.find_one({"username": username})
-
+        user = None
+        for user_id in users_db:
+            if users_db[user_id]["username"] == username:
+                user = users_db[user_id]
+                break
         if not user or not check_password_hash(user["password"], password):
-            flash("Invalid email or password!", "error")
             return redirect(url_for("login"))
-
-        session["user_id"] = str(user["_id"])
+        session["user_id"] = user_id
         session["username"] = user["username"]
         session["email"] = user["email"]
         session["role"] = user["role"]
-
-        print("Login successful")
-
         if user["role"] == "lawyer":
             return redirect(url_for("lawyer_dashboard", user_id=session["user_id"]))
         elif user["role"] == "judge":
@@ -86,59 +101,82 @@ def login():
     return render_template("login.html")
 
 
+@app.route("/posts/<post_id>")
+def view_case(post_id):
+    case = cases_db.get(post_id)
+    if not case:
+        return "Case not found", 404
+    return render_template("case_details.html", case=case)
+
+
+
+
 @app.route("/lawyer/<user_id>", methods=["GET", "POST"])
 def lawyer_dashboard(user_id):
-    if "user_id" not in session or str(session["user_id"]) != user_id:
-        flash("Unauthorized access!", "error")
+    if "user_id" not in session or session["user_id"] != user_id:
         return redirect(url_for("login"))
-    user = users_collection.find_one({"_id": ObjectId(user_id)})
-    cases = list(cases_collection.find({"lawyer_id": session["user_id"]}))
+
+    user = users_db.get(user_id, {})
+    lawyer_cases = [{**cases_db[case_id], "_id": case_id} for case_id in cases_db if cases_db[case_id].get("user_id") == user_id]
+
     if request.method == "POST":
         title = request.form.get("title")
         content = request.form.get("content")
         case_type = request.form.get("case_type")
-        if not title or not content or not case_type:
-            flash("All fields are required!", "error")
-            return redirect(url_for("lawyer_dashboard", user_id=user_id))
+        file = request.files.get("file")  
+        print(file)
+        # cids = []
+        # for file in files:
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            file.save(filepath)
+            print(f"File saved to {filepath}")
+            cid = pin_file_to_ipfs(filepath)  # Pass the full path
+            if cid:
+                # cids.append(cid)
+                print(f"File {filename} uploaded to Pinata with CID: {cid}")
+                new_doc = {"title": title, "content": content, "case_type": case_type, "user_id": user_id, "file": cid}
+                cases_db.save(new_doc)
+            else:
+                print(f"Failed to upload {filename} to Pinata")        
+        return redirect(url_for("lawyer_dashboard", user_id=user_id))
+    return render_template("lawyer_dashboard.html", user=user, cases=lawyer_cases)
 
 
-        case_metadata = {
-            "title": title,
-            "content": content,
-            "case_type": case_type,
-            "user_id": user_id,   
+@app.route('/send-to-registrar/<case_id>', methods=['GET','POST'])
+def send_to_registrar(case_id):
+    
+    # Logic to update the case status in the database (e.g., mark it as "Sent to Registrar")
+    print(f"Case {case_id} sent to registrar")  # Replace with actual database logic
+    return redirect(url_for('lawyer_dashboard'))
+
+
+
+def pin_file_to_ipfs(file_path):
+    try:
+        url = "https://api.pinata.cloud/pinning/pinFileToIPFS"
+        headers = {
+            "Authorization": f"Bearer {JWT}",
         }
+        absolute_path = os.path.abspath(file_path) 
+        with open(absolute_path, "rb") as file: 
+            files = {"file": (os.path.basename(file_path), file)}
+            response = requests.post(url, headers=headers, files=files)
+        response_data = response.json()
+        print(response_data)
+        return response_data.get("IpfsHash")  
+    except Exception as e:
+        print("Error:", e)
+        return None
 
-        cases_collection.insert_one(case_metadata)
-        print("Case uploaded successfully!")
+    
 
-    return render_template("lawyer_dashboard.html", user=user,cases=cases)
-
-
-@app.route("/judge/<user_id>")
-def judge_dashboard(user_id):
-    if "user_id" not in session or session["user_id"] != user_id:
-        flash("Unauthorized access!", "error")
-        return redirect(url_for("login"))
-    user = users_collection.find_one({"_id": pymongo.ObjectId(user_id)})
-    return render_template("judge_dashboard.html", user=user)
-
-
-@app.route("/registrar/<user_id>")
-def registrar_dashboard(user_id):
-    if "user_id" not in session or session["user_id"] != user_id:
-        flash("Unauthorized access!", "error")
-        return redirect(url_for("login"))
-    user = users_collection.find_one({"_id": pymongo.ObjectId(user_id)})
-    return render_template("registrar_dashboard.html", user=user)
-
-
+    
 @app.route("/logout")
 def logout():
     session.clear()
-    print("Logged out successfully.")
     return redirect(url_for("login"))
-
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)

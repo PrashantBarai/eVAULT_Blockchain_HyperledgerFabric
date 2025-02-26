@@ -13,24 +13,34 @@
         <div class="flex space-x-6">
             <a href="/lawyer/{{user._id}}" class="hover:text-gray-300 transition duration-300">Home</a>
             <a href="/lawyer/mycases/{{user._id}}" class="hover:text-gray-300 transition duration-300">My Cases</a>
+            <a href="/lawyer/availableregistrar" class="hover:text-gray-300 transition duration-300">Available Registrars</a>
         </div>
         <a href="/logout" class="bg-red-500 px-4 py-2 rounded-lg hover:bg-red-600 transition duration-300">Logout</a>
     </nav>
 
-    <!-- Container -->
     <div class="container mx-auto p-6">
         <h2 class="text-3xl font-bold text-gray-800">Welcome to the Lawyer Dashboard</h2>
         <p class="text-gray-600">Manage your cases efficiently.</p>
-
-        <!-- My Cases Section -->
+    
         <h3 class="text-2xl font-semibold mt-6">My Cases</h3>
         <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-6 mt-4">
             {% if cases %}
                 {% for case in cases %}
                 <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-transform transform hover:scale-105 duration-300">
-                    <h3 class="text-xl font-semibold text-blue-900">{{ case.title }}</h3>
+                    <a href="/posts/{{ case._id }}" class="text-xl font-semibold text-blue-900 hover:underline">
+                        {{ case.title }}
+                    </a>
                     <p class="text-sm font-medium text-orange-500 mt-2"><strong>Type:</strong> {{ case.case_type | capitalize }}</p>
                     <p class="text-gray-700 mt-3">{{ case.content }}</p>
+                    
+                    <!-- Send to Registrar Button -->
+                    <form action="/send-to-registrar/{{ case._id }}" method="post" class="mt-4">
+                        <button type="submit" 
+                            onclick="return confirm('Are you sure you want to send this case to the registrar?');" 
+                            class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition duration-300">
+                            Send to Registrar
+                        </button>
+                    </form>
                 </div>
                 {% endfor %}
             {% else %}
@@ -38,6 +48,7 @@
             {% endif %}
         </div>
     </div>
+    
 
     <!-- Floating Upload Button -->
     <button class="fixed bottom-6 right-6 bg-orange-500 text-white p-5 rounded-full shadow-lg text-xl hover:bg-orange-600 transition-transform transform hover:scale-110 duration-300"
@@ -65,8 +76,12 @@
         </div>
     </div>
 
-    <!-- JavaScript for Popup -->
     <script>
+        
+        if (window.history.replaceState) {
+            window.history.replaceState(null, null, window.location.href);
+        }
+          
         function togglePopup() {
             var form = document.getElementById("caseForm");
             form.classList.toggle("hidden");
