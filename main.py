@@ -1,12 +1,12 @@
-from flask import Flask, request, render_template, redirect, url_for, session
-import couchdb
-import os
+from flask import Flask, request, render_template, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 from urllib.parse import quote
 from werkzeug.utils import secure_filename
 import requests
-
+import base64
+import couchdb
+import os
 load_dotenv()
 
 app = Flask(__name__)
@@ -20,10 +20,11 @@ ALLOWED_EXTENSIONS = {"pdf", "docx", "jpg", "png"}
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-COUCHDB_URL = f"http://ammar:{COUCH_PASS_ENCODED}@127.0.0.1:5984/"
 JWT = os.getenv('JWT') 
 PINATA_API_KEY = os.getenv("PINATA_API_KEY")
 PINATA_SECRET_API_KEY = os.getenv("PINATA_SECRET_API_KEY")
+
+COUCHDB_URL = f"http://ammar:{COUCH_PASS_ENCODED}@127.0.0.1:5984/"
 PINATA_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS"
 
 server = couchdb.Server(COUCHDB_URL)
@@ -109,41 +110,79 @@ def view_case(post_id):
         return "Case not found", 404
     return render_template("case_details.html", case=case)
 
+@app.route("/posts/reg/<post_id>")
+def registrar_view_case(post_id):
+    case = cases_db.get(post_id)
+    if not case:
+        return "Case not found", 404
+    return render_template("registrar_case_details.html", case=case)
 
+
+@app.route('/save_signature', methods=['POST'])
+def save_signature():
+    data = request.json
+    case_id = data.get("case_id")
+    signature_data = data.get("signature")  
+    if signature_data and case_id:
+        signature_path = f"static/signatures/{case_id}.png"
+        with open(signature_path, "wb") as f:
+            f.write(base64.b64decode(signature_data.split(",")[1]))  
+        return jsonify({"message": "Signature saved successfully!"}), 200
+    return jsonify({"error": "Invalid signature data"}), 400
 
 
 @app.route("/lawyer/<user_id>", methods=["GET", "POST"])
 def lawyer_dashboard(user_id):
-    if "user_id" not in session or session["user_id"] != user_id:
+    if str(session.get("user_id")) != str(user_id):
         return redirect(url_for("login"))
 
+
     user = users_db.get(user_id, {})
-    lawyer_cases = [{**cases_db[case_id], "_id": case_id} for case_id in cases_db if cases_db[case_id].get("user_id") == user_id]
+    lawyer_cases = list(cases_db.find({"user_id": user_id}))
 
     if request.method == "POST":
         title = request.form.get("title")
         content = request.form.get("content")
         case_type = request.form.get("case_type")
-        file = request.files.get("file")  
-        print(file)
-        # cids = []
-        # for file in files:
+        party1_uid = request.form.get("party1_uid")
+        party2_uid = request.form.get("party2_uid")
+        date_of_filing = request.form.get("date_of_filing")
+        updated_on = request.form.get("updated_on")
+        file = request.files.get("files")
+
+        cid = None  # Default value if no file is uploaded
+
+        if not os.path.exists(app.config["UPLOAD_FOLDER"]): 
+            os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(filepath)
-            print(f"File saved to {filepath}")
-            cid = pin_file_to_ipfs(filepath)  # Pass the full path
-            if cid:
-                # cids.append(cid)
-                print(f"File {filename} uploaded to Pinata with CID: {cid}")
-                new_doc = {"title": title, "content": content, "case_type": case_type, "user_id": user_id, "file": cid}
-                cases_db.save(new_doc)
-            else:
-                print(f"Failed to upload {filename} to Pinata")        
-        return redirect(url_for("lawyer_dashboard", user_id=user_id))
-    return render_template("lawyer_dashboard.html", user=user, cases=lawyer_cases)
 
+            cid = pin_file_to_ipfs(filepath)  
+            if cid:
+                print(f"File {filename} uploaded to Pinata with CID: {cid}")
+            else:
+                print(f"Failed to upload {filename} to Pinata")
+
+        new_doc = {
+            "title": title,
+            "content": content,
+            "case_type": case_type,
+            "party1_uid": party1_uid,
+            "party2_uid": party2_uid,
+            "date_of_filing": date_of_filing,
+            "updated_on": updated_on,
+            "user_id": user_id,
+            "file": cid, 
+            "status": ["filed"]
+        }
+        cases_db.save(new_doc)
+
+        return redirect(url_for("lawyer_dashboard", user_id=user_id))
+
+    return render_template("lawyer_dashboard.html", user=user, cases=lawyer_cases)
 
 
 @app.route("/registrar/<user_id>", methods=["GET"])
@@ -177,7 +216,7 @@ def send_to_registrar(case_id):
 
     selected_registrar["cases"].append(case_id)  # Save only case ID
     users_db.save(selected_registrar)  
-    case["status"] = "Sent to Registrar"
+    case["status"].append("Sent to Registrar")
     case["assigned_registrar"] = selected_registrar["_id"]
     cases_db.save(case)  
 

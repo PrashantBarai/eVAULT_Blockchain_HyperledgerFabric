@@ -1,5 +1,5 @@
 /venv/
-/frontend/
 /uploads/
+/fabric-samples/
 .env
 secrets

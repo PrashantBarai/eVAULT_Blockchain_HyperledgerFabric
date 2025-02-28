@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ case.title }} - Registrar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad"></script>
+</head>
+<body class="bg-gray-100 p-6">
+
+    <a href="/registrar/dashboard" class="text-blue-600 hover:underline">← Back to Dashboard</a>
+
+    <div class="bg-white p-6 mt-4 rounded-lg shadow-lg">
+        <h1 class="text-3xl font-bold text-gray-800">{{ case.title }}</h1>
+        <p class="text-sm font-medium text-orange-500 mt-2"><strong>Type:</strong> {{ case.case_type | capitalize }}</p>
+        <p class="text-gray-700 mt-4">{{ case.content }}</p>
+
+        {% if case.file %}
+            <p class="mt-4"><strong>Document:</strong> 
+                <a href="https://gateway.pinata.cloud/ipfs/{{ case.file }}" target="_blank" 
+                   class="text-blue-600 hover:underline">View File</a>
+            </p>
+        {% endif %}
+
+        <!-- Digital Signature Section -->
+        <div class="mt-6">
+            <h2 class="text-xl font-semibold text-gray-800">Registrar's Digital Signature</h2>
+            <canvas id="signature-pad" width="400" height="150" class="border mt-2"></canvas>
+            <div class="mt-2">
+                <button id="clear" class="px-4 py-2 bg-red-500 text-white rounded">Clear</button>
+                <button id="save" class="px-4 py-2 bg-green-500 text-white rounded">Save</button>
+            </div>
+        </div>
+
+        <img id="saved-signature" class="mt-4 border hidden" />
+
+    </div>
+
+    <script>
+        const canvas = document.getElementById("signature-pad");
+        const signaturePad = new SignaturePad(canvas);
+
+        document.getElementById("clear").addEventListener("click", function () {
+            signaturePad.clear();
+        });
+
+        document.getElementById("save").addEventListener("click", function () {
+            if (!signaturePad.isEmpty()) {
+                const signatureData = signaturePad.toDataURL();
+                document.getElementById("saved-signature").src = signatureData;
+                document.getElementById("saved-signature").classList.remove("hidden");
+
+                fetch("/save_signature", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ signature: signatureData, case_id: "{{ case.id }}" })
+                }).then(response => response.json()).then(data => {
+                    alert(data.message);
+                }).catch(error => console.error("Error:", error));
+            } else {
+                alert("Please sign before saving!");
+            }
+        });
+    </script>
+
+</body>
+</html>
