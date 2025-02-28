@@ -7,12 +7,22 @@ from urllib.parse import quote
 from werkzeug.utils import secure_filename
 import requests
 from flask_cors import CORS
+from flask_session import Session
+
+
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
-CORS(app, origins=["http://localhost:5173"], supports_credentials=True)
-# CouchDB and Pinata configurations
+app.config["SECRET_KEY"] = "your_secret_key"
+app.config["SESSION_TYPE"] = "filesystem"  # Use server-side session storage
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = False  # For local session storage
+app.config["WTF_CSRF_ENABLED"] = False
+
+CORS(app, supports_credentials=True)
+Session(app)
 COUCH_PASS = os.getenv("COUCH_PASS")
 COUCH_PASS_ENCODED = quote(COUCH_PASS, safe='')
 UPLOAD_FOLDER = "uploads"
@@ -26,7 +36,9 @@ JWT = os.getenv('JWT')
 PINATA_API_KEY = os.getenv("PINATA_API_KEY")
 PINATA_SECRET_API_KEY = os.getenv("PINATA_SECRET_API_KEY")
 PINATA_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS"
-
+app.config["SESSION_COOKIE_HTTPONLY"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+# app.config["SESSION_COOKIE_SECURE"] = True  #
 server = couchdb.Server(COUCHDB_URL)
 
 try:
@@ -55,12 +67,10 @@ def signup():
     credit_card = data.get("credit_card")
     role = data.get("role")
 
-    # Check if email already exists
     for user in users_db:
         if users_db[user]["email"] == email:
             return jsonify({"error": "Email already exists"}), 400
 
-    # Hash password and save user
     hashed_password = generate_password_hash(password)
     user_id = users_db.save({
         "username": username,
@@ -74,7 +84,7 @@ def signup():
 
     return jsonify({"message": "User created successfully", "user_id": user_id}), 201
 
-@app.route("/login", methods=["POST"])
+@app.route("/login", methods=["POST","GET"])
 def login():
     data = request.json
     username = data.get("username")
@@ -91,12 +101,12 @@ def login():
     if not user or not check_password_hash(user["password"], password):
         return jsonify({"error": "Invalid username or password"}), 401
 
-    # Set session data
     session["user_id"] = user_id
     session["username"] = user["username"]
     session["email"] = user["email"]
     session["role"] = user["role"]
-
+    session.modified = True
+    
     return jsonify({
         "message": "Login successful",
         "user_id": user_id,
@@ -107,7 +117,7 @@ def login():
 @app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
-    return redirect('/')
+    return jsonify({"message": "Logged out successfully"}), 200
 
 
 import uuid
@@ -116,20 +126,20 @@ import uuid
 @app.route("/lawyer/<user_id>", methods=["GET", "POST"])
 def lawyer_dashboard(user_id):
     if str(session.get("user_id")) != str(user_id):
-        return jsonify({"error": "Unauthorized"}), 401  # 🔥 Return JSON instead of redirecting
+        return jsonify({"error": "Unauthorized"}), 401
+    print("Session Data:", session)
 
-    user = users_db.get(user_id, {})  # Fetch user data from CouchDB
-    lawyer_cases = list(cases_db.find({"user_id": user_id}))  # Fetch cases for lawyer
+    user = users_db.get(user_id, {})  
+    lawyer_cases = [doc for doc in cases_db if doc.get("user_id") == user_id]
 
-    # 🔥 Convert MongoDB/CouchDB results to JSON serializable format
-    for case in lawyer_cases:
-        case["_id"] = str(case["_id"])  # Ensure `_id` is a string for JSON
+    for case1 in lawyer_cases:
+        case1["_id"] = str(case1["_id"])  # Ensure `_id` is a string for JSON
 
     if request.method == "GET":
         return jsonify({"userId": user_id, "cases": lawyer_cases})  # ✅ Return JSON for frontend
 
     if request.method == "POST":
-        data = request.json  # 🔥 Use request.json for React compatibility
+        data = request.json()  # 🔥 Use request.json for React compatibility
         if not data:
             return jsonify({"error": "Invalid JSON data"}), 400
 
@@ -232,4 +242,5 @@ def pin_file_to_ipfs(file_path):
         return None
 
 if __name__ == "__main__":
+    
     app.run(debug=True, port=8000)

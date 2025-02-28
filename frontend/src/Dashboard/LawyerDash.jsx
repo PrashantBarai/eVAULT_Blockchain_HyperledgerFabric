@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
+import React from "react";
 
 const LawyerDash = () => {
     const { userId } = useParams();
@@ -10,9 +11,9 @@ const LawyerDash = () => {
     const [showForm, setShowForm] = useState(false);
 
     useEffect(() => {
-        fetch(`http://127.0.0.1:8000/lawyer/${userId}`, { // ✅ Comma added here
+        fetch(`http://127.0.0.1:8000/lawyer/${userId}`, { 
             method: "GET",
-            credentials: "include", // ✅ Ensures cookies are sent
+            credentials: "include", 
             headers: {
                 "Content-Type": "application/json",
             },
@@ -52,7 +53,21 @@ const LawyerDash = () => {
                 <a href={`/lawyer/mycases/${userId}`} className="hover:text-gray-300">My Cases</a>
                     <a href="/lawyer/availableregistrar" className="hover:text-gray-300">Available Registrars</a>
                 </div>
-                <button onClick={() => navigate("/logout")} className="bg-red-500 px-4 py-2 rounded-lg hover:bg-red-600">Logout</button>
+                <button onClick={() => {
+        fetch("http://127.0.0.1:8000/logout", { 
+            method: "POST", 
+            credentials: "include",  
+        })
+        .then(res => {
+            if (res.ok) {
+                navigate("/");  // Redirect to home/login page
+            } else {
+                console.error("Logout failed");
+            }
+        })
+        .catch(err => console.error("Logout error:", err));
+    }}
+    className="bg-red-500 px-4 py-2 rounded-lg hover:bg-red-600">Logout</button>
             </nav>
 
             <div className="container mx-auto p-6">

@@ -1,4 +1,8 @@
+import React from "react";
+
+
 const LandingPage = () => {
+
     return (
       <div className="flex flex-col justify-center items-center h-screen text-white bg-gradient-to-r from-blue-900 to-blue-700 text-center">
         {/* Navbar */}
