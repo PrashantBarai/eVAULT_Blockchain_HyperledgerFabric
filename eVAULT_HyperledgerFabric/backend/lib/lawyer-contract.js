@@ -1,56 +1,96 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- */
-
 'use strict';
 
 const { Contract } = require('fabric-contract-api');
 
 class LawyerContract extends Contract {
 
-    async lawyerExists(ctx, lawyerId) {
-        const buffer = await ctx.stub.getState(lawyerId);
-        return (!!buffer && buffer.length > 0);
-    }
+    async InitLedger(ctx) {
+        console.log("Initializing Ledger with sample cases...");
 
-    async createLawyer(ctx, lawyerId, value) {
-        const exists = await this.lawyerExists(ctx, lawyerId);
-        if (exists) {
-            throw new Error(`The lawyer ${lawyerId} already exists`);
+        const sampleCases = [
+            {
+                lawyerID: "LAWYER_001",
+                caseDetails: "Property Dispute Case",
+                ipfsHash: "Qm123abc..."
+            },
+            {
+                lawyerID: "LAWYER_002",
+                caseDetails: "Corporate Fraud Case",
+                ipfsHash: "Qm456def..."
+            }
+        ];
+
+        for (const caseData of sampleCases) {
+            const caseID = `CASE_${Date.now()}`;
+            const caseRecord = {
+                caseID,
+                lawyerID: caseData.lawyerID,
+                caseDetails: caseData.caseDetails,
+                ipfsHash: caseData.ipfsHash,
+                status: "Pending Verification"
+            };
+
+            await ctx.stub.putState(caseID, Buffer.from(JSON.stringify(caseRecord)));
         }
-        const asset = { value };
-        const buffer = Buffer.from(JSON.stringify(asset));
-        await ctx.stub.putState(lawyerId, buffer);
+
+        console.log("Ledger Initialized Successfully");
     }
 
-    async readLawyer(ctx, lawyerId) {
-        const exists = await this.lawyerExists(ctx, lawyerId);
-        if (!exists) {
-            throw new Error(`The lawyer ${lawyerId} does not exist`);
+    // Submit a new case (Lawyer uploads case)
+    async submitCase(ctx, lawyerID, caseDetails, ipfsHash) {
+        const caseID = `CASE_${Date.now()}`; // Unique Case ID
+
+        const caseData = {
+            caseID,
+            lawyerID,
+            caseDetails,
+            ipfsHash,  // IPFS CID for media files
+            status: "Pending Verification"
+        };
+
+        await ctx.stub.putState(caseID, Buffer.from(JSON.stringify(caseData)));
+        return JSON.stringify({ message: `Case ${caseID} submitted successfully!`, caseID });
+    }
+
+    // Assign case to Registrar (Queue-based Random Allocation)
+    async assignToRegistrar(ctx, caseID) {
+        const caseData = await ctx.stub.getState(caseID);
+        if (!caseData || caseData.length === 0) {
+            throw new Error(`Case ${caseID} not found`);
         }
-        const buffer = await ctx.stub.getState(lawyerId);
-        const asset = JSON.parse(buffer.toString());
-        return asset;
+
+        let caseObj = JSON.parse(caseData.toString());
+
+        // Get all registrars and assign based on queue
+        const registrars = await this.getAllRegistrars(ctx);
+        const assignedRegistrar = registrars.reduce((minQueueRegistrar, currentRegistrar) => {
+            return (currentRegistrar.queueLength < minQueueRegistrar.queueLength) ? currentRegistrar : minQueueRegistrar;
+        });
+
+        caseObj.assignedTo = assignedRegistrar.registrarID;
+        caseObj.status = "Assigned to Registrar";
+
+        await ctx.stub.putState(caseID, Buffer.from(JSON.stringify(caseObj)));
+        return JSON.stringify({ message: `Case ${caseID} assigned to Registrar ${assignedRegistrar.registrarID}` });
     }
 
-    async updateLawyer(ctx, lawyerId, newValue) {
-        const exists = await this.lawyerExists(ctx, lawyerId);
-        if (!exists) {
-            throw new Error(`The lawyer ${lawyerId} does not exist`);
+    // Retrieve case details
+    async getCaseDetails(ctx, caseID) {
+        const caseData = await ctx.stub.getState(caseID);
+        if (!caseData || caseData.length === 0) {
+            throw new Error(`Case ${caseID} not found`);
         }
-        const asset = { value: newValue };
-        const buffer = Buffer.from(JSON.stringify(asset));
-        await ctx.stub.putState(lawyerId, buffer);
+        return caseData.toString();
     }
 
-    async deleteLawyer(ctx, lawyerId) {
-        const exists = await this.lawyerExists(ctx, lawyerId);
-        if (!exists) {
-            throw new Error(`The lawyer ${lawyerId} does not exist`);
-        }
-        await ctx.stub.deleteState(lawyerId);
+    // Get all registrars (Stub method)
+    async getAllRegistrars(ctx) {
+        return [
+            { registrarID: "R1", queueLength: 3 },
+            { registrarID: "R2", queueLength: 1 },
+            { registrarID: "R3", queueLength: 2 }
+        ];
     }
-
 }
 
 module.exports = LawyerContract;

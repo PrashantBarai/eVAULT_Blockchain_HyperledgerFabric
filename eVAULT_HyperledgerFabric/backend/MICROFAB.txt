@@ -26,7 +26,8 @@
         "StampReportersOrg",
         "BenchClerksOrg",
         "JudgesOrg"
-      ]
+      ],
+      "capability_level": "V1_4_2"
     }
   ]
 }
