@@ -2,7 +2,7 @@ import React from 'react';
 import { AppBar, Toolbar, Typography, Button, Box, Avatar } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import LogoutIcon from '@mui/icons-material/Logout';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
   zIndex: theme.zIndex.drawer + 1,
@@ -12,7 +12,31 @@ const StyledAppBar = styled(AppBar)(({ theme }) => ({
 
 const Header = () => {
   const navigate = useNavigate();
-  const lawyerName = "Adv. John Doe"; // This will come from auth context later
+  const location = useLocation();
+  
+  const isRegistrarSection = location.pathname.startsWith('/registrar');
+  const isStampReporterSection = location.pathname.startsWith('/stampreporter');
+
+  const getUserInfo = () => {
+    if (isRegistrarSection) {
+      return {
+        name: 'Registrar John Smith',
+        role: 'Registrar',
+      };
+    } else if (isStampReporterSection) {
+      return {
+        name: 'Stamp Reporter Raj Kumar',
+        role: 'Stamp Reporter',
+      };
+    } else {
+      return {
+        name: 'Adv. John Doe',
+        role: 'Lawyer',
+      };
+    }
+  };
+
+  const { name } = getUserInfo();
 
   const handleLogout = () => {
     // Will implement logout logic later
@@ -30,10 +54,10 @@ const Header = () => {
         
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ bgcolor: 'secondary.main' }}>
-            {lawyerName.charAt(0)}
+            {name.charAt(0)}
           </Avatar>
           <Typography variant="subtitle1" sx={{ mr: 2 }}>
-            {lawyerName}
+            {name}
           </Typography>
           <Button
             color="inherit"
