@@ -21,7 +21,7 @@ const Login = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     // TODO: Add actual authentication logic
-    navigate('/lawyer/dashboard');
+    navigate('/benchclerk/dashboard');
   };
 
   return (
@@ -33,6 +33,7 @@ const Login = () => {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
+          background: 'linear-gradient(120deg, #4a90e2 0%, #8e44ad 100%)',
         }}
       >
         <Paper
@@ -42,14 +43,16 @@ const Login = () => {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            background: 'linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%)',
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: 2,
           }}
         >
-          <Avatar sx={{ m: 1, bgcolor: '#3f51b5' }}>
+          <Avatar sx={{ m: 1, bgcolor: '#4a90e2' }}>
             <LockOutlinedIcon />
           </Avatar>
-          <Typography component="h1" variant="h5" sx={{ mb: 3 }}>
-            Lawyer Login
+          <Typography component="h1" variant="h5" sx={{ mb: 3, color: '#4a90e2' }}>
+            Bench Clerk Login
           </Typography>
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
             <TextField
@@ -79,9 +82,9 @@ const Login = () => {
               sx={{ 
                 mt: 3, 
                 mb: 2,
-                bgcolor: '#3f51b5',
+                background: 'linear-gradient(45deg, #4a90e2 30%, #8e44ad 90%)',
                 '&:hover': {
-                  bgcolor: '#2f3f8f',
+                  background: 'linear-gradient(45deg, #357abd 30%, #693380 90%)',
                 }
               }}
             >

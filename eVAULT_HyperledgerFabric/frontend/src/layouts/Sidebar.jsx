@@ -17,12 +17,16 @@ const Sidebar = () => {
   const isLawyerSection = location.pathname.startsWith('/lawyer');
   const isRegistrarSection = location.pathname.startsWith('/registrar');
   const isStampReporterSection = location.pathname.startsWith('/stampreporter');
+  const isBenchClerkSection = location.pathname.startsWith('/benchclerk');
+  const isJudgeSection = location.pathname.startsWith('/judge');
 
   const getMenuItems = (role) => {
     switch (role) {
       case 'lawyer':
         return [
           { text: 'Dashboard', icon: <DashboardIcon />, path: '/lawyer/dashboard' },
+          { text: 'Cases', icon: <GavelIcon />, path: '/lawyer/cases' },
+          { text: 'Submit Case', icon: <AddCircleIcon />, path: '/lawyer/submit-case' },
           { text: 'Case History', icon: <HistoryIcon />, path: '/lawyer/case-history' },
           { text: 'Profile', icon: <PersonIcon />, path: '/lawyer/profile' },
           { text: 'Notifications', icon: <NotificationsIcon />, path: '/lawyer/notifications' },
@@ -43,6 +47,23 @@ const Sidebar = () => {
           { text: 'Profile', icon: <PersonIcon />, path: '/stampreporter/profile' },
           { text: 'Notifications', icon: <NotificationsIcon />, path: '/stampreporter/notifications' },
         ];
+      case 'benchclerk':
+        return [
+          { text: 'Dashboard', icon: <DashboardIcon />, path: '/benchclerk/dashboard' },
+          { text: 'Case Management', icon: <GavelIcon />, path: '/benchclerk/case-management' },
+          { text: 'Judge Decision Confirmation', icon: <VerifiedIcon />, path: '/benchclerk/judge-decision-confirmation' },
+          { text: 'Case Status Tracking', icon: <HistoryIcon />, path: '/benchclerk/case-status-tracking' },
+          { text: 'Notifications', icon: <NotificationsIcon />, path: '/benchclerk/notifications' },
+          { text: 'Profile', icon: <PersonIcon />, path: '/benchclerk/profile' },
+        ];
+      case 'judge':
+        return [
+          { text: 'Dashboard', icon: <DashboardIcon />, path: '/judge/dashboard' },
+          { text: 'Case Review', icon: <GavelIcon />, path: '/judge/case-review' },
+          { text: 'Case Status', icon: <AssignmentIcon />, path: '/judge/case-status' },
+          { text: 'Notifications', icon: <NotificationsIcon />, path: '/judge/notifications' },
+          { text: 'Profile', icon: <PersonIcon />, path: '/judge/profile' },
+        ];
       default:
         return [];
     }
@@ -56,6 +77,10 @@ const Sidebar = () => {
         return '#1a237e';
       case 'stampreporter':
         return '#3f51b5';
+      case 'benchclerk':
+        return '#1a237e';
+      case 'judge':
+        return '#1a237e';
       default:
         return '#3f51b5';
     }
@@ -69,14 +94,36 @@ const Sidebar = () => {
         return 'Registrar Portal';
       case 'stampreporter':
         return 'Stamp Reporter Portal';
+      case 'benchclerk':
+        return 'Bench Clerk Portal';
+      case 'judge':
+        return 'Judge Portal';
       default:
         return 'Lawyer Portal';
     }
   };
 
-  let menuItems = getMenuItems(isLawyerSection ? 'lawyer' : isRegistrarSection ? 'registrar' : isStampReporterSection ? 'stampreporter' : 'lawyer');
-  let sectionColor = getThemeColor(isLawyerSection ? 'lawyer' : isRegistrarSection ? 'registrar' : isStampReporterSection ? 'stampreporter' : 'lawyer');
-  let sectionTitle = getSectionTitle(isLawyerSection ? 'lawyer' : isRegistrarSection ? 'registrar' : isStampReporterSection ? 'stampreporter' : 'lawyer');
+  let menuItems = getMenuItems(
+    isLawyerSection ? 'lawyer' : 
+    isRegistrarSection ? 'registrar' : 
+    isStampReporterSection ? 'stampreporter' : 
+    isBenchClerkSection ? 'benchclerk' :
+    isJudgeSection ? 'judge' : 'lawyer'
+  );
+  let sectionColor = getThemeColor(
+    isLawyerSection ? 'lawyer' : 
+    isRegistrarSection ? 'registrar' : 
+    isStampReporterSection ? 'stampreporter' : 
+    isBenchClerkSection ? 'benchclerk' :
+    isJudgeSection ? 'judge' : 'lawyer'
+  );
+  let sectionTitle = getSectionTitle(
+    isLawyerSection ? 'lawyer' : 
+    isRegistrarSection ? 'registrar' : 
+    isStampReporterSection ? 'stampreporter' : 
+    isBenchClerkSection ? 'benchclerk' :
+    isJudgeSection ? 'judge' : 'lawyer'
+  );
 
   return (
     <Box
