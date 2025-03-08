@@ -1,4 +1,4 @@
-Copyright © 2025 Prashant Barai. All Rights Reserved.
+**Copyright © 2025 Prashant Barai. All Rights Reserved.**
 
 This repository and its contents (the "Software") (including but not limited to source code, documentation, and assets) are proprietary and confidential and are publicly available **only for review purposes**.  
 Unauthorized copying, modification, distribution, or any form of use of this Software is strictly prohibited.
