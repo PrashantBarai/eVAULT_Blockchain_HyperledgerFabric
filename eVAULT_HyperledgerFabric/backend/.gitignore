@@ -3,6 +3,7 @@
 #
 
 # Logs
+/venv/
 logs
 *.log
 npm-debug.log*

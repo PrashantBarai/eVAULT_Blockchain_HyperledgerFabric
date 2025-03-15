@@ -12,6 +12,7 @@ import LawyerCaseHistory from './pages/lawyer/CaseHistory';
 import LawyerNotifications from './pages/lawyer/Notifications';
 import LawyerProfile from './pages/lawyer/Profile';
 import LawyerLogin from './pages/lawyer/Login';
+import Signup from './pages/lawyer/Signup';
 
 // Bench Clerk Pages
 import BenchClerkDashboard from './pages/benchclerk/Dashboard';
@@ -57,6 +58,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           {/* Lawyer Routes */}
+          <Route path="/signup" element={<Signup/>} /> 
           <Route path="/lawyer/login" element={<LawyerLogin />} />
           <Route path="/lawyer" element={<MainLayout />}>
             <Route path="dashboard" element={<LawyerDashboard />} />

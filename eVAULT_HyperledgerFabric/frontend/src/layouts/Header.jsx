@@ -11,6 +11,17 @@ const StyledAppBar = styled(AppBar)(({ theme }) => ({
 }));
 
 const Header = () => {
+  const userString = localStorage.getItem('user_data'); // Get the user data as a string
+  let user = null;
+
+  try {
+    user = JSON.parse(userString); // Parse the string into an object
+  } catch (error) {
+    console.error('Failed to parse user data:', error);
+  }
+  console.log('User data from localStorage:', user);
+  console.log('Username:', user ? user.username : 'No user found');
+
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -20,17 +31,17 @@ const Header = () => {
   const getUserInfo = () => {
     if (isRegistrarSection) {
       return {
-        name: 'Registrar John Smith',
+        name: 'Registrar '+user.username,
         role: 'Registrar',
       };
     } else if (isStampReporterSection) {
       return {
-        name: 'Stamp Reporter Raj Kumar',
+        name: 'Stamp Reporter '+user.username,
         role: 'Stamp Reporter',
       };
     } else {
       return {
-        name: 'Adv. John Doe',
+        name: 'Adv. '+user.username,
         role: 'Lawyer',
       };
     }
@@ -40,7 +51,7 @@ const Header = () => {
 
   const handleLogout = () => {
     // Will implement logout logic later
-    navigate('/login');
+    navigate('/');
   };
 
   return (

@@ -8,20 +8,31 @@ import {
   Container,
   Avatar,
 } from '@mui/material';
-import {
-  LockOutlined as LockOutlinedIcon,
-} from '@mui/icons-material';
+import { LockOutlined as LockOutlinedIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const Login = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: Add actual authentication logic
-    navigate('/lawyer/dashboard');
+    try {
+      const response = await axios.post('http://localhost:8000/', {
+        email,
+        password,
+      });
+      const { access_token, user_data } = response.data;
+      localStorage.setItem('token', access_token);
+      localStorage.setItem('user_data',JSON.stringify(user_data));
+      console.log(access_token);
+      console.log(user_data);
+      navigate('/lawyer/dashboard');
+    } catch (error) {
+      console.error('Login failed:', error.response?.data?.detail || error.message);
+    }
   };
 
   return (

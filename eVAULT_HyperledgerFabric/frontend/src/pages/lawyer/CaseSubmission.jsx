@@ -16,7 +16,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-
+import { jwtDecode } from 'jwt-decode';
 const StyledContainer = styled(Container)(({ theme }) => ({
   padding: theme.spacing(3),
   maxWidth: '1200px',
@@ -66,7 +66,6 @@ const StyledTextField = styled(TextField)(({ theme }) => ({
 
 const CaseSubmission = () => {
   const [formData, setFormData] = useState({
-    caseId: '',
     uidParty1: '',
     uidParty2: '',
     filedDate: null,
@@ -81,7 +80,7 @@ const CaseSubmission = () => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
@@ -94,10 +93,55 @@ const CaseSubmission = () => {
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form Data:', formData);
-    console.log('Files:', files);
+
+    // Retrieve JWT token from localStorage
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      alert('You must be logged in to submit a case.');
+      return;
+    }
+
+    const decodedToken = jwtDecode(token);
+    const userId = decodedToken.sub; // Assuming `sub` contains the user's email or ID
+
+    const formDataToSend = new FormData();
+    formDataToSend.append('uid_party1', formData.uidParty1);
+    formDataToSend.append('uid_party2', formData.uidParty2);
+    formDataToSend.append('filed_date', formData.filedDate);
+    formDataToSend.append('associated_lawyers', formData.associatedLawyers);
+    formDataToSend.append('associated_judge', formData.associatedJudge);
+    formDataToSend.append('case_subject', formData.caseSubject);
+    formDataToSend.append('latest_update', formData.latestUpdate);
+    formDataToSend.append('status', 'open'); // Default status
+    formDataToSend.append('user_id', userId); // Include user_id
+
+    files.forEach((file) => {
+      formDataToSend.append('files', file);
+    });
+
+    try {
+      // Send the request to the backend
+      const response = await fetch('/submit-case', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formDataToSend,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to submit case');
+      }
+
+      const result = await response.json();
+      alert('Case submitted successfully!');
+      console.log('Case ID:', result.case_id);
+    } catch (error) {
+      console.error('Error submitting case:', error);
+      alert('Failed to submit case. Please try again.');
+    }
   };
 
   return (
@@ -113,15 +157,6 @@ const CaseSubmission = () => {
           </Typography>
 
           <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <StyledTextField
-                fullWidth
-                label="Case ID"
-                name="caseId"
-                value={formData.caseId}
-                onChange={handleChange}
-              />
-            </Grid>
             <Grid item xs={12} md={6}>
               <StyledTextField
                 fullWidth
