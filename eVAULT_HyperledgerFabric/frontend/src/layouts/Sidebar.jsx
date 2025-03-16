@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { Box, List, ListItem, ListItemIcon, ListItemText, Typography } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -86,6 +86,19 @@ const Sidebar = () => {
     }
   };
 
+  const getBackgroundStyle = (role) => {
+    switch (role) {
+      case 'benchclerk':
+        return {
+          background: 'linear-gradient(135deg, #1a237e 0%, #3f51b5 100%)'
+        };
+      default:
+        return {
+          bgcolor: getThemeColor(role)
+        };
+    }
+  };
+
   const getSectionTitle = (role) => {
     switch (role) {
       case 'lawyer':
@@ -110,7 +123,7 @@ const Sidebar = () => {
     isBenchClerkSection ? 'benchclerk' :
     isJudgeSection ? 'judge' : 'lawyer'
   );
-  let sectionColor = getThemeColor(
+  let backgroundStyle = getBackgroundStyle(
     isLawyerSection ? 'lawyer' : 
     isRegistrarSection ? 'registrar' : 
     isStampReporterSection ? 'stampreporter' : 
@@ -126,49 +139,51 @@ const Sidebar = () => {
   );
 
   return (
-    <Box
-      sx={{
-        width: 240,
-        flexShrink: 0,
-        bgcolor: sectionColor,
-        color: 'white',
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <Box sx={{ p: 3 }}>
-        <Typography variant="h6" component="div">
-          E-VAULT
-        </Typography>
-        <Typography variant="subtitle2" sx={{ mt: 1, opacity: 0.8 }}>
-          {sectionTitle}
-        </Typography>
+    <React.Fragment>
+      <Box
+        sx={{
+          width: 240,
+          flexShrink: 0,
+          color: 'white',
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          ...backgroundStyle
+        }}
+      >
+        <Box sx={{ p: 3 }}>
+          <Typography variant="h6" component="div">
+            E-VAULT
+          </Typography>
+          <Typography variant="subtitle2" sx={{ mt: 1, opacity: 0.8 }}>
+            {sectionTitle}
+          </Typography>
+        </Box>
+        <List>
+          {menuItems.map((item) => (
+            <ListItem
+              button
+              key={item.text}
+              onClick={() => navigate(item.path)}
+              sx={{
+                bgcolor: location.pathname === item.path ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.1)',
+                },
+                borderRadius: 1,
+                mx: 1,
+                mb: 0.5,
+              }}
+            >
+              <ListItemIcon sx={{ color: 'white', minWidth: 40 }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText primary={item.text} />
+            </ListItem>
+          ))}
+        </List>
       </Box>
-      <List>
-        {menuItems.map((item) => (
-          <ListItem
-            button
-            key={item.text}
-            onClick={() => navigate(item.path)}
-            sx={{
-              bgcolor: location.pathname === item.path ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-              '&:hover': {
-                bgcolor: 'rgba(255, 255, 255, 0.1)',
-              },
-              borderRadius: 1,
-              mx: 1,
-              mb: 0.5,
-            }}
-          >
-            <ListItemIcon sx={{ color: 'white', minWidth: 40 }}>
-              {item.icon}
-            </ListItemIcon>
-            <ListItemText primary={item.text} />
-          </ListItem>
-        ))}
-      </List>
-    </Box>
+    </React.Fragment>
   );
 };
 

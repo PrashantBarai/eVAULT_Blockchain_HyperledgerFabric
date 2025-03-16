@@ -60,8 +60,9 @@ const Dashboard = () => {
         sx={{
           p: 3,
           mb: 4,
-          background: 'linear-gradient(120deg, #4a90e2 0%, #8e44ad 100%)',
+          background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
           color: 'white',
+          borderRadius: 2,
         }}
       >
         <Typography variant="h4" gutterBottom>

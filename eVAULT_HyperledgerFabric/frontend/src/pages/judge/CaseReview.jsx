@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+    
+import { useState } from 'react';
 import {
   Box,
   Paper,
@@ -11,39 +12,30 @@ import {
   TableRow,
   Button,
   TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  IconButton,
   Chip,
   Grid,
-  Stepper,
-  Step,
-  StepLabel,
-  Card,
-  CardContent,
+  MenuItem,
+  Select,
   FormControl,
   InputLabel,
-  Select,
-  MenuItem,
+  Step,
+  StepLabel,
+  Stepper,
+  InputAdornment,
+  Divider,
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  Close as CloseIcon,
+  ArrowBack as ArrowBackIcon,
   Gavel as GavelIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-  Pause as PauseIcon,
-  Description as DescriptionIcon,
 } from '@mui/icons-material';
 
 const CaseReview = () => {
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedCase, setSelectedCase] = useState(null);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [decisionType, setDecisionType] = useState('');
-  const [decisionReason, setDecisionReason] = useState('');
-  const [openDecisionDialog, setOpenDecisionDialog] = useState(false);
+  const [showDecisionForm, setShowDecisionForm] = useState(false);
+  const [decision, setDecision] = useState('');
+  const [remarks, setRemarks] = useState('');
 
   // Mock data
   const cases = [
@@ -52,57 +44,325 @@ const CaseReview = () => {
       title: 'Property Dispute Resolution',
       type: 'Civil',
       lawyerName: 'Jane Smith',
-      submissionDate: '2025-03-05',
       status: 'New',
-      documents: [
-        { name: 'Property_Deed.pdf', type: 'PDF' },
-        { name: 'Evidence_Photos.jpg', type: 'Image' },
-        { name: 'Witness_Statements.pdf', type: 'PDF' },
-      ],
       history: [
-        { date: '2025-03-01', action: 'Case Filed', actor: 'Lawyer' },
-        { date: '2025-03-03', action: 'Documents Verified', actor: 'Stamp Reporter' },
-        { date: '2025-03-05', action: 'Forwarded to Judge', actor: 'Bench Clerk' },
-      ]
+        { date: '2025-03-05', action: 'Case submitted by lawyer', actor: 'Jane Smith' },
+        { date: '2025-03-06', action: 'Case verified by stamp reporter', actor: 'John Doe' },
+        { date: '2025-03-07', action: 'Case forwarded to judge', actor: 'Bench Clerk' },
+      ],
+      documents: [
+        { name: 'Property_Deed.pdf', type: 'PDF', size: '2.5 MB' },
+        { name: 'Evidence_Photos.jpg', type: 'Image', size: '1.2 MB' },
+        { name: 'Witness_Statements.pdf', type: 'PDF', size: '0.8 MB' },
+      ],
     },
-    // Add more mock cases here
+    {
+      id: 'CASE-2025-002',
+      title: 'Contract Violation',
+      type: 'Commercial',
+      lawyerName: 'Michael Johnson',
+      status: 'New',
+      history: [
+        { date: '2025-03-04', action: 'Case submitted by lawyer', actor: 'Michael Johnson' },
+        { date: '2025-03-05', action: 'Case verified by stamp reporter', actor: 'Sarah Wilson' },
+        { date: '2025-03-06', action: 'Case forwarded to judge', actor: 'Bench Clerk' },
+      ],
+      documents: [
+        { name: 'Contract.pdf', type: 'PDF', size: '3.1 MB' },
+        { name: 'Communication_Records.pdf', type: 'PDF', size: '1.5 MB' },
+      ],
+    },
   ];
 
   const handleViewCase = (caseData) => {
     setSelectedCase(caseData);
-    setOpenDialog(true);
+    setShowDecisionForm(false);
+    setDecision('');
+    setRemarks('');
   };
 
-  const handleDecisionClick = () => {
-    setOpenDecisionDialog(true);
+  const handleBackToList = () => {
+    setSelectedCase(null);
+    setShowDecisionForm(false);
+    setDecision('');
+    setRemarks('');
   };
 
-  const handleDecisionSubmit = () => {
+  const handleShowDecisionForm = () => {
+    setShowDecisionForm(true);
+  };
+
+  const handleSubmitDecision = () => {
+    if (!decision) return;
+    
     // TODO: Implement decision submission logic
-    setOpenDecisionDialog(false);
-    setOpenDialog(false);
+    console.log('Decision submitted:', decision, 'Remarks:', remarks);
+    
+    // After submitting, go back to the list
+    setSelectedCase(null);
+    setShowDecisionForm(false);
+    setDecision('');
+    setRemarks('');
   };
 
-  const getStatusChipColor = (status) => {
-    switch (status.toLowerCase()) {
-      case 'new': return 'info';
-      case 'accepted': return 'success';
-      case 'rejected': return 'error';
-      case 'on hold': return 'warning';
-      default: return 'default';
-    }
-  };
+  const filteredCases = cases.filter(
+    (case_) =>
+      case_.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      case_.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      case_.lawyerName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (selectedCase) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Button 
+          startIcon={<ArrowBackIcon />} 
+          onClick={handleBackToList}
+          sx={{ mb: 3 }}
+        >
+          Back to Cases
+        </Button>
+
+        {showDecisionForm ? (
+          <>
+            <Paper 
+              elevation={0}
+              sx={{ 
+                p: 3,
+                mb: 3,
+                background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
+                color: 'white',
+                borderRadius: 2
+              }}
+            >
+              <Typography variant="h4" gutterBottom>Make Decision</Typography>
+              <Typography variant="subtitle1">Case ID: {selectedCase.id}</Typography>
+            </Paper>
+
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>Decision Form</Typography>
+              <Divider sx={{ my: 2 }} />
+              
+              <FormControl fullWidth sx={{ mb: 3 }}>
+                <InputLabel id="decision-select-label">Decision</InputLabel>
+                <Select
+                  labelId="decision-select-label"
+                  id="decision-select"
+                  value={decision}
+                  label="Decision"
+                  onChange={(e) => setDecision(e.target.value)}
+                >
+                  <MenuItem value="Approve">Approve</MenuItem>
+                  <MenuItem value="Reject">Reject</MenuItem>
+                  <MenuItem value="Request Additional Information">Request Additional Information</MenuItem>
+                </Select>
+              </FormControl>
+              
+              <TextField
+                fullWidth
+                multiline
+                rows={4}
+                label="Remarks"
+                variant="outlined"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                sx={{ mb: 3 }}
+              />
+
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end',
+                gap: 2
+              }}>
+                <Button 
+                  variant="outlined" 
+                  onClick={() => setShowDecisionForm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  endIcon={<GavelIcon />}
+                  onClick={handleSubmitDecision}
+                  disabled={!decision}
+                  sx={{
+                    bgcolor: '#3f51b5',
+                    '&:hover': {
+                      bgcolor: '#1a237e',
+                    }
+                  }}
+                >
+                  Submit Decision
+                </Button>
+              </Box>
+            </Paper>
+          </>
+        ) : (
+          <>
+            <Paper 
+              elevation={0}
+              sx={{ 
+                p: 3,
+                mb: 3,
+                background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
+                color: 'white',
+                borderRadius: 2
+              }}
+            >
+              <Typography variant="h4" gutterBottom>Case Details</Typography>
+              <Typography variant="subtitle1">Case ID: {selectedCase.id}</Typography>
+            </Paper>
+
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>Case Information</Typography>
+              <Divider sx={{ my: 2 }} />
+              
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" color="textSecondary">Case Title</Typography>
+                    <Typography variant="body1">{selectedCase.title}</Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" color="textSecondary">Case Type</Typography>
+                    <Typography variant="body1">{selectedCase.type}</Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" color="textSecondary">Lawyer</Typography>
+                    <Typography variant="body1">{selectedCase.lawyerName}</Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" color="textSecondary">Status</Typography>
+                    <Chip
+                      label={selectedCase.status}
+                      color="primary"
+                      size="small"
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </Paper>
+
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>Case History</Typography>
+              <Divider sx={{ my: 2 }} />
+              
+              <Stepper orientation="vertical" sx={{ mt: 2 }}>
+                {selectedCase.history.map((step, index) => (
+                  <Step key={index} active={true} completed={true}>
+                    <StepLabel>
+                      <Typography variant="subtitle1">{step.action}</Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        {step.date} - {step.actor}
+                      </Typography>
+                    </StepLabel>
+                  </Step>
+                ))}
+              </Stepper>
+            </Paper>
+
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>Documents</Typography>
+              <Divider sx={{ my: 2 }} />
+              
+              <Grid container spacing={2}>
+                {selectedCase.documents.map((doc, index) => (
+                  <Grid item xs={12} sm={6} key={index}>
+                    <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                      {doc.type === 'PDF' ? (
+                        <Box sx={{ 
+                          bgcolor: '#f44336', 
+                          color: 'white', 
+                          width: 40, 
+                          height: 40, 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          borderRadius: 1
+                        }}>
+                          PDF
+                        </Box>
+                      ) : (
+                        <Box sx={{ 
+                          bgcolor: '#4caf50', 
+                          color: 'white', 
+                          width: 40, 
+                          height: 40, 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          borderRadius: 1
+                        }}>
+                          IMG
+                        </Box>
+                      )}
+                      <Box>
+                        <Typography variant="body1">{doc.name}</Typography>
+                        <Typography variant="body2" color="textSecondary">{doc.size}</Typography>
+                      </Box>
+                    </Paper>
+                  </Grid>
+                ))}
+              </Grid>
+            </Paper>
+
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end',
+              mt: 4 
+            }}>
+              <Button
+                variant="contained"
+                endIcon={<GavelIcon />}
+                onClick={handleShowDecisionForm}
+                sx={{
+                  bgcolor: '#3f51b5',
+                  '&:hover': {
+                    bgcolor: '#1a237e',
+                  }
+                }}
+              >
+                Make Decision
+              </Button>
+            </Box>
+          </>
+        )}
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        Case Review & Decision
+        Case Review
       </Typography>
+
+      <TextField
+        fullWidth
+        variant="outlined"
+        placeholder="Search cases..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        sx={{ mb: 3 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon />
+            </InputAdornment>
+          ),
+        }}
+      />
 
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
-            <TableRow sx={{ background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)' }}>
+            <TableRow sx={{ background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)' }}>
               <TableCell sx={{ color: 'white' }}>Case ID</TableCell>
               <TableCell sx={{ color: 'white' }}>Title</TableCell>
               <TableCell sx={{ color: 'white' }}>Type</TableCell>
@@ -112,7 +372,7 @@ const CaseReview = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {cases.map((case_) => (
+            {filteredCases.map((case_) => (
               <TableRow key={case_.id}>
                 <TableCell>{case_.id}</TableCell>
                 <TableCell>{case_.title}</TableCell>
@@ -121,20 +381,25 @@ const CaseReview = () => {
                 <TableCell>
                   <Chip
                     label={case_.status}
-                    color={getStatusChipColor(case_.status)}
+                    color="primary"
                     size="small"
                   />
                 </TableCell>
                 <TableCell>
                   <Button
-                    variant="contained"
+                    variant="outlined"
+                    size="small"
                     onClick={() => handleViewCase(case_)}
-                    sx={{
-                      background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-                      color: 'white',
+                    sx={{ 
+                      color: '#3f51b5',
+                      borderColor: '#3f51b5',
+                      '&:hover': {
+                        borderColor: '#3f51b5',
+                        bgcolor: 'rgba(63, 81, 181, 0.1)',
+                      }
                     }}
                   >
-                    Review
+                    View Details
                   </Button>
                 </TableCell>
               </TableRow>
@@ -142,159 +407,6 @@ const CaseReview = () => {
           </TableBody>
         </Table>
       </TableContainer>
-
-      {/* Case Details Dialog */}
-      <Dialog
-        open={openDialog}
-        onClose={() => setOpenDialog(false)}
-        maxWidth="lg"
-        fullWidth
-      >
-        <DialogTitle>
-          <Box display="flex" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">Case Details</Typography>
-            <IconButton onClick={() => setOpenDialog(false)}>
-              <CloseIcon />
-            </IconButton>
-          </Box>
-        </DialogTitle>
-        <DialogContent dividers>
-          {selectedCase && (
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={8}>
-                <Card sx={{ mb: 3 }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      {selectedCase.title}
-                    </Typography>
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="body2" color="text.secondary">
-                          Case ID: {selectedCase.id}
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="body2" color="text.secondary">
-                          Type: {selectedCase.type}
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="body2" color="text.secondary">
-                          Lawyer: {selectedCase.lawyerName}
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="body2" color="text.secondary">
-                          Submission Date: {selectedCase.submissionDate}
-                        </Typography>
-                      </Grid>
-                    </Grid>
-                  </CardContent>
-                </Card>
-
-                <Typography variant="h6" gutterBottom>
-                  Documents
-                </Typography>
-                <Box sx={{ mb: 3 }}>
-                  {selectedCase.documents.map((doc, index) => (
-                    <Chip
-                      key={index}
-                      icon={<DescriptionIcon />}
-                      label={doc.name}
-                      sx={{ m: 0.5 }}
-                      color="primary"
-                    />
-                  ))}
-                </Box>
-
-                <Typography variant="h6" gutterBottom>
-                  Case History
-                </Typography>
-                <Stepper orientation="vertical">
-                  {selectedCase.history.map((step, index) => (
-                    <Step key={index} active={true}>
-                      <StepLabel>
-                        <Typography variant="subtitle2">{step.action}</Typography>
-                        <Typography variant="caption">
-                          {step.date} • {step.actor}
-                        </Typography>
-                      </StepLabel>
-                    </Step>
-                  ))}
-                </Stepper>
-              </Grid>
-              
-              <Grid item xs={12} md={4}>
-                <Card sx={{ mb: 3, bgcolor: '#f5f5f5' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Take Action
-                    </Typography>
-                    <Button
-                      fullWidth
-                      variant="contained"
-                      color="primary"
-                      startIcon={<GavelIcon />}
-                      onClick={handleDecisionClick}
-                      sx={{
-                        mb: 2,
-                        background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-                      }}
-                    >
-                      Make Decision
-                    </Button>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Decision Dialog */}
-      <Dialog
-        open={openDecisionDialog}
-        onClose={() => setOpenDecisionDialog(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Make Decision</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mb: 2, mt: 1 }}>
-            <InputLabel>Decision</InputLabel>
-            <Select
-              value={decisionType}
-              label="Decision"
-              onChange={(e) => setDecisionType(e.target.value)}
-            >
-              <MenuItem value="accept">Accept Case</MenuItem>
-              <MenuItem value="reject">Reject Case</MenuItem>
-              <MenuItem value="hold">Put On Hold</MenuItem>
-              <MenuItem value="ruling">Provide Final Ruling</MenuItem>
-            </Select>
-          </FormControl>
-          <TextField
-            fullWidth
-            multiline
-            rows={4}
-            label="Reason/Comments"
-            value={decisionReason}
-            onChange={(e) => setDecisionReason(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenDecisionDialog(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleDecisionSubmit}
-            sx={{
-              background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-            }}
-          >
-            Submit Decision
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

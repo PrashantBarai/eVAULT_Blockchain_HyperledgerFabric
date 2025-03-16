@@ -3,6 +3,10 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme/theme';
 
+// Common Pages
+import Login from './pages/common/Login';
+import Signup from './pages/common/Signup';
+
 // Lawyer Pages
 import LawyerDashboard from './pages/lawyer/Dashboard';
 import LawyerCases from './pages/lawyer/Cases';
@@ -11,7 +15,6 @@ import LawyerCaseDetails from './pages/lawyer/CaseDetails';
 import LawyerCaseHistory from './pages/lawyer/CaseHistory';
 import LawyerNotifications from './pages/lawyer/Notifications';
 import LawyerProfile from './pages/lawyer/Profile';
-import LawyerLogin from './pages/lawyer/Login';
 
 // Bench Clerk Pages
 import BenchClerkDashboard from './pages/benchclerk/Dashboard';
@@ -20,7 +23,6 @@ import BenchClerkJudgeDecisionConfirmation from './pages/benchclerk/JudgeDecisio
 import BenchClerkCaseStatusTracking from './pages/benchclerk/CaseStatusTracking';
 import BenchClerkNotifications from './pages/benchclerk/Notifications';
 import BenchClerkProfile from './pages/benchclerk/Profile';
-import BenchClerkLogin from './pages/benchclerk/Login';
 
 // Registrar Pages
 import RegistrarDashboard from './pages/registrar/Dashboard';
@@ -29,7 +31,6 @@ import RegistrarCaseVerification from './pages/registrar/CaseVerification';
 import RegistrarCaseHistory from './pages/registrar/CaseHistory';
 import RegistrarNotifications from './pages/registrar/Notifications';
 import RegistrarProfile from './pages/registrar/Profile';
-import RegistrarLogin from './pages/registrar/Login';
 
 // Stamp Reporter Pages
 import StampReporterDashboard from './pages/stampreporter/Dashboard';
@@ -38,7 +39,6 @@ import StampReporterCaseVerification from './pages/stampreporter/CaseVerificatio
 import StampReporterCaseHistory from './pages/stampreporter/CaseHistory';
 import StampReporterNotifications from './pages/stampreporter/Notifications';
 import StampReporterProfile from './pages/stampreporter/Profile';
-import StampReporterLogin from './pages/stampreporter/Login';
 
 // Judge Pages
 import JudgeDashboard from './pages/judge/Dashboard';
@@ -46,7 +46,6 @@ import JudgeCaseReview from './pages/judge/CaseReview';
 import JudgeCaseStatus from './pages/judge/CaseStatus';
 import JudgeNotifications from './pages/judge/Notifications';
 import JudgeProfile from './pages/judge/Profile';
-import JudgeLogin from './pages/judge/Login';
 
 import MainLayout from './layouts/MainLayout';
 
@@ -56,8 +55,11 @@ function App() {
       <CssBaseline />
       <BrowserRouter>
         <Routes>
+          {/* Common Authentication Routes */}
+          <Route path="/" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+
           {/* Lawyer Routes */}
-          <Route path="/lawyer/login" element={<LawyerLogin />} />
           <Route path="/lawyer" element={<MainLayout />}>
             <Route path="dashboard" element={<LawyerDashboard />} />
             <Route path="cases" element={<LawyerCases />} />
@@ -69,7 +71,6 @@ function App() {
           </Route>
 
           {/* Bench Clerk Routes */}
-          <Route path="/benchclerk/login" element={<BenchClerkLogin />} />
           <Route path="/benchclerk" element={<MainLayout />}>
             <Route path="dashboard" element={<BenchClerkDashboard />} />
             <Route path="case-management" element={<BenchClerkCaseManagement />} />
@@ -80,7 +81,6 @@ function App() {
           </Route>
 
           {/* Registrar Routes */}
-          <Route path="/registrar/login" element={<RegistrarLogin />} />
           <Route path="/registrar" element={<MainLayout />}>
             <Route path="dashboard" element={<RegistrarDashboard />} />
             <Route path="cases" element={<RegistrarCases />} />
@@ -91,7 +91,6 @@ function App() {
           </Route>
 
           {/* Stamp Reporter Routes */}
-          <Route path="/stampreporter/login" element={<StampReporterLogin />} />
           <Route path="/stampreporter" element={<MainLayout />}>
             <Route path="dashboard" element={<StampReporterDashboard />} />
             <Route path="cases" element={<StampReporterCases />} />
@@ -102,7 +101,6 @@ function App() {
           </Route>
 
           {/* Judge Routes */}
-          <Route path="/judge/login" element={<JudgeLogin />} />
           <Route path="/judge" element={<MainLayout />}>
             <Route path="dashboard" element={<JudgeDashboard />} />
             <Route path="case-review" element={<JudgeCaseReview />} />
@@ -111,8 +109,8 @@ function App() {
             <Route path="profile" element={<JudgeProfile />} />
           </Route>
 
-          {/* Redirect root to lawyer login */}
-          <Route path="/" element={<LawyerLogin />} />
+          {/* Redirect unmatched routes to common login */}
+          <Route path="*" element={<Login />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
