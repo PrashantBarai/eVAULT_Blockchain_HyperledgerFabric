@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -14,54 +14,53 @@ import {
   Chip,
   ToggleButton,
   ToggleButtonGroup,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
-import {
-  Search as SearchIcon,
-} from '@mui/icons-material';
+import { Search as SearchIcon } from '@mui/icons-material';
 
 const CaseHistory = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock data - replace with actual API call
-  const cases = [
-    {
-      id: 1,
-      caseNumber: 'CASE-2024-001',
-      title: 'Property Documentation',
-      client: 'Robert Brown',
-      status: 'Completed',
-      date: '2024-12-15',
-      verifiedBy: 'Registrar Office',
-    },
-    {
-      id: 2,
-      caseNumber: 'CASE-2024-002',
-      title: 'Will Registration',
-      client: 'Sarah Wilson',
-      status: 'Rejected',
-      date: '2024-12-10',
-      verifiedBy: 'Stamp Reporter',
-    },
-    {
-      id: 3,
-      caseNumber: 'CASE-2024-003',
-      title: 'Land Deed Transfer',
-      client: 'Michael Clark',
-      status: 'Completed',
-      date: '2024-11-28',
-      verifiedBy: 'Registrar Office',
-    },
-    {
-      id: 4,
-      caseNumber: 'CASE-2024-004',
-      title: 'Partnership Agreement',
-      client: 'Tech Solutions Ltd',
-      status: 'Pending',
-      date: '2024-11-20',
-      verifiedBy: 'In Process',
-    },
-  ];
+  // Fetch cases from the backend
+  useEffect(() => {
+    const fetchCases = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('You must be logged in to view cases.');
+        }
+
+        const userString = localStorage.getItem('user_data');
+        const user = JSON.parse(userString);
+        const userId = user.user_id;
+
+        const response = await fetch(`http://localhost:8000/case-history/${userId}`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch cases.');
+        }
+
+        const data = await response.json();
+        setCases(data.cases);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCases();
+  }, []);
 
   const getStatusColor = (status) => {
     switch (status.toLowerCase()) {
@@ -77,17 +76,33 @@ const CaseHistory = () => {
   };
 
   const filteredCases = cases.filter((case_) => {
-    const matchesSearch = 
-      case_.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.client.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = 
-      statusFilter === 'all' || 
-      case_.status.toLowerCase() === statusFilter.toLowerCase();
+    const matchesSearch =
+      case_.caseNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      case_.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      case_.client?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesStatus =
+      statusFilter === 'all' ||
+      case_.status?.toLowerCase() === statusFilter.toLowerCase();
 
     return matchesSearch && matchesStatus;
   });
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -148,18 +163,18 @@ const CaseHistory = () => {
           </TableHead>
           <TableBody>
             {filteredCases.map((case_) => (
-              <TableRow key={case_.id}>
+              <TableRow key={case_._id}>
                 <TableCell>{case_.caseNumber}</TableCell>
-                <TableCell>{case_.title}</TableCell>
+                <TableCell>{case_.case_subject}</TableCell>
                 <TableCell>{case_.client}</TableCell>
                 <TableCell>
-                  <Chip 
+                  <Chip
                     label={case_.status}
                     color={getStatusColor(case_.status)}
                     size="small"
                   />
                 </TableCell>
-                <TableCell>{case_.date}</TableCell>
+                <TableCell>{new Date(case_.filed_date).toLocaleDateString()}</TableCell>
                 <TableCell>{case_.verifiedBy}</TableCell>
               </TableRow>
             ))}

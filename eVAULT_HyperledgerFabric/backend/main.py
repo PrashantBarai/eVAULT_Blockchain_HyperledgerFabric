@@ -9,15 +9,14 @@ from backend.utils import *
 from backend.config import *
 from backend.database import *
 from typing import List, Optional
+# from bson import ObjectId
+
 # from dotenv import load_dotenv
 # import requests
 import uuid
 import os
 
 app = FastAPI()
-
-TEMP_UPLOAD_DIR = "temp_uploads"
-os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,7 +75,6 @@ def store_files_locally(user_id: str, case_id: str, files: List[UploadFile]) -> 
 
 
 
-
 @app.post("/submit-case")
 async def submit_case(
     uid_party1: str = Form(...),
@@ -89,8 +87,9 @@ async def submit_case(
     status: str = Form(...),
     user_id: str = Form(...),
     client: str = Form(...),
-    files: List[UploadFile] = File(...)
+    files: Optional[List[UploadFile]] = File(None)  # Make files optional
 ):
+    print(client)
     try:
         filed_date_parsed = datetime.strptime(filed_date, "%a, %d %b %Y %H:%M:%S %Z")
         case_data = {
@@ -108,17 +107,40 @@ async def submit_case(
         }
         case_result = case_collection.insert_one(case_data)
         case_id = str(case_result.inserted_id) 
-        stored_files = store_files_locally(user_id, case_id, files)
-        try:
-            cids = [await pin_file_to_ipfs(files["file"]) for files in stored_files]
-        except Exception as e:
-            print(e)
-        case_collection.update_one(
-            {"_id": case_result.inserted_id},
-            {"$set": {"file_cids": cids}}
-        )
+        if files:  # Only process files if they are uploaded
+            stored_files = store_files_locally(user_id, case_id, files)
+            try:
+                cids = [await pin_file_to_ipfs(files["file"]) for files in stored_files]
+            except Exception as e:
+                print(e)
+            case_collection.update_one(
+                {"_id": case_result.inserted_id},
+                {"$set": {"file_cids": cids}}
+            )
 
         return {"message": "Case submitted successfully", "case_id": case_id}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error submitting case: {str(e)}")
+    
+@app.get("/get-cases/{user_id}")
+async def get_cases(user_id: str):
+    try:
+        cases = list(case_collection.find({"user_id": user_id}))
+        for c in cases:
+            c["_id"] = str(c["_id"])
+        return {"cases": cases}
+    except Exception as e:
+        print(f"Error fetching cases: {str(e)}")  # Log the error
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@app.get("/case-history/{user_id}")
+async def get_cases(user_id: str):
+    try:
+        cases = list(case_collection.find({"user_id": user_id}))
+        for c in cases:
+            c["_id"] = str(c["_id"])
+        return {"cases": cases}
+    except Exception as e:
+        print(f"Error fetching cases: {str(e)}")  # Log the error
+        raise HTTPException(status_code=500, detail="Internal server error")

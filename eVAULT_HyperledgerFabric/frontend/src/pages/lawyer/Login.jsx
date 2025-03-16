@@ -27,7 +27,7 @@ const Login = () => {
       const { access_token, user_data } = response.data;
       localStorage.setItem('token', access_token);
       localStorage.setItem('user_data',JSON.stringify(user_data));
-      // console.log(access_token);
+      console.log(access_token);
       // console.log(user_data);
       navigate('/lawyer/dashboard');
     } catch (error) {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -12,6 +12,8 @@ import {
   Button,
   TextField,
   InputAdornment,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -22,45 +24,74 @@ import { useNavigate } from 'react-router-dom';
 const Cases = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock data - replace with actual API call
-  const cases = [
-    {
-      id: 1,
-      caseNumber: 'CASE-2025-001',
-      title: 'Property Dispute Resolution',
-      client: 'John Doe',
-      status: 'Pending',
-      date: '2025-03-01',
-    },
-    {
-      id: 2,
-      caseNumber: 'CASE-2025-002',
-      title: 'Contract Review',
-      client: 'Jane Smith',
-      status: 'In Progress',
-      date: '2025-02-28',
-    },
-    {
-      id: 3,
-      caseNumber: 'CASE-2025-003',
-      title: 'Intellectual Property Rights',
-      client: 'Tech Corp',
-      status: 'Completed',
-      date: '2025-02-27',
-    },
-  ];
+  // Fetch cases from the backend
+  useEffect(() => {
+    const fetchCases = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        console.log(token);
+        if (!token) {
+          throw new Error('You must be logged in to view cases.');
+        }
 
+        const userString = localStorage.getItem('user_data');
+        const user = JSON.parse(userString);
+        const userId = user.user_id;
+
+        const response = await fetch(`http://localhost:8000/get-cases/${userId}`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch cases.');
+        }
+
+        const data = await response.json();
+        setCases(data.cases);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCases();
+  }, []);
+
+  // Filter cases based on search query
   const filteredCases = cases.filter(
     (case_) =>
-      case_.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.client.toLowerCase().includes(searchQuery.toLowerCase())
+      case_.caseNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      case_.case_subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      case_.client?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleViewCase = (caseId) => {
     navigate(`/lawyer/case/${caseId}`);
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -99,18 +130,18 @@ const Cases = () => {
           </TableHead>
           <TableBody>
             {filteredCases.map((case_) => (
-              <TableRow key={case_.id}>
-                <TableCell>{case_.caseNumber}</TableCell>
-                <TableCell>{case_.title}</TableCell>
+              <TableRow key={case_._id}>
+                <TableCell>{case_.caseId}</TableCell>
+                <TableCell>{case_.case_subject}</TableCell>
                 <TableCell>{case_.client}</TableCell>
                 <TableCell>{case_.status}</TableCell>
-                <TableCell>{case_.date}</TableCell>
+                <TableCell>{new Date(case_.filed_date).toLocaleDateString()}</TableCell>
                 <TableCell>
                   <Button
                     variant="contained"
                     size="small"
                     startIcon={<VisibilityIcon />}
-                    onClick={() => handleViewCase(case_.id)}
+                    onClick={() => handleViewCase(case_._id)}
                     sx={{
                       bgcolor: '#3f51b5',
                       '&:hover': {

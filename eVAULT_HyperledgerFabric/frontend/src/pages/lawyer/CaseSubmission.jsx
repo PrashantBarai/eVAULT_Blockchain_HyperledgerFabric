@@ -16,7 +16,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { jwtDecode } from 'jwt-decode';
 
 const StyledContainer = styled(Container)(({ theme }) => ({
   padding: theme.spacing(3),
@@ -119,13 +118,17 @@ const CaseSubmission = () => {
     formDataToSend.append('associated_judge', formData.associatedJudge);
     formDataToSend.append('case_subject', formData.caseSubject);
     formDataToSend.append('latest_update', formData.latestUpdate);
-    formDataToSend.append('status', 'open'); 
+    formDataToSend.append('status', 'pending'); 
     formDataToSend.append('user_id', user.user_id); 
     formDataToSend.append('client', formData.client); // Append client field
 
-    files.forEach((file) => {
-      formDataToSend.append('files', file);
-    });
+    // Append files only if they exist
+    if (files.length > 0) {
+      files.forEach((file) => {
+        formDataToSend.append('files', file);
+      });
+    }
+   
 
     for (let [key, value] of formDataToSend.entries()) {
       console.log(key, value);
@@ -246,7 +249,7 @@ const CaseSubmission = () => {
 
             <Grid item xs={12}>
               <Typography variant="h6" gutterBottom sx={{ color: '#2C3E50', mt: 2 }}>
-                Uploaded Evidences
+                Uploaded Evidences (Optional)
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 (in format of .jpg, .jpeg, .png, .pdf, .mp4, .mkv, .doc, .txt)
@@ -264,7 +267,7 @@ const CaseSubmission = () => {
                 <UploadArea>
                   <CloudUploadIcon sx={{ fontSize: 48, color: '#6B5ECD', mb: 2 }} />
                   <Typography variant="h6" gutterBottom sx={{ color: '#2C3E50' }}>
-                    Drop files here or click to upload
+                    Drop files here or click to upload (Optional)
                   </Typography>
                 </UploadArea>
               </label>
