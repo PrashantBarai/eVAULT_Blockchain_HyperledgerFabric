@@ -17,6 +17,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { jwtDecode } from 'jwt-decode';
+
 const StyledContainer = styled(Container)(({ theme }) => ({
   padding: theme.spacing(3),
   maxWidth: '1200px',
@@ -73,6 +74,7 @@ const CaseSubmission = () => {
     associatedJudge: '',
     caseSubject: '',
     latestUpdate: '',
+    client: '', // New field for client
   });
   const [files, setFiles] = useState([]);
 
@@ -97,14 +99,17 @@ const CaseSubmission = () => {
     e.preventDefault();
 
     // Retrieve JWT token from localStorage
-    const token = localStorage.getItem('access_token');
+    const token = localStorage.getItem('token');
+    console.log("Token from localStorage:", token);
     if (!token) {
       alert('You must be logged in to submit a case.');
       return;
     }
 
-    const decodedToken = jwtDecode(token);
-    const userId = decodedToken.sub; // Assuming `sub` contains the user's email or ID
+    const userString = localStorage.getItem('user_data');
+    let user = null;
+    user = JSON.parse(userString); 
+    console.log(user);
 
     const formDataToSend = new FormData();
     formDataToSend.append('uid_party1', formData.uidParty1);
@@ -114,23 +119,27 @@ const CaseSubmission = () => {
     formDataToSend.append('associated_judge', formData.associatedJudge);
     formDataToSend.append('case_subject', formData.caseSubject);
     formDataToSend.append('latest_update', formData.latestUpdate);
-    formDataToSend.append('status', 'open'); // Default status
-    formDataToSend.append('user_id', userId); // Include user_id
+    formDataToSend.append('status', 'open'); 
+    formDataToSend.append('user_id', user.user_id); 
+    formDataToSend.append('client', formData.client); // Append client field
 
     files.forEach((file) => {
       formDataToSend.append('files', file);
     });
 
+    for (let [key, value] of formDataToSend.entries()) {
+      console.log(key, value);
+    }
+
     try {
-      // Send the request to the backend
-      const response = await fetch('/submit-case', {
+      const response = await fetch('http://localhost:8000/submit-case', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
         },
         body: formDataToSend,
       });
-
+      console.log(response);
       if (!response.ok) {
         throw new Error('Failed to submit case');
       }
@@ -200,6 +209,15 @@ const CaseSubmission = () => {
                 label="Associated Judge"
                 name="associatedJudge"
                 value={formData.associatedJudge}
+                onChange={handleChange}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <StyledTextField
+                fullWidth
+                label="Client"
+                name="client"
+                value={formData.client}
                 onChange={handleChange}
               />
             </Grid>
