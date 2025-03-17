@@ -7,13 +7,9 @@ from datetime import datetime, timedelta
 from backend.models import *
 from backend.utils import *
 from backend.config import *
-from backend.database import *
+from backend.database import users_collection,case_collection
 from typing import List, Optional
-# from bson import ObjectId
-
-# from dotenv import load_dotenv
-# import requests
-import uuid
+from bson import ObjectId
 import os
 
 app = FastAPI()
@@ -26,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.post("/signup")
 async def signup(user: UserCreate):
     existing_user = users_collection.find_one({"username": user.username})
@@ -37,6 +34,10 @@ async def signup(user: UserCreate):
         "password": user.password,
         "user_type": user.user_type,
     }
+    if user.user_type=='lawyer':
+        user_data["pending_cases"] = 0
+        user_data["verified_cases"] = 0
+        user_data["rejected_cases"] = 0
     result = users_collection.insert_one(user_data)
     if result.inserted_id:return {"message": "User created successfully", "user_id": str(result.inserted_id)}
     else:raise HTTPException(status_code=500, detail="Failed to create user")
@@ -87,9 +88,20 @@ async def submit_case(
     status: str = Form(...),
     user_id: str = Form(...),
     client: str = Form(...),
-    files: Optional[List[UploadFile]] = File(None)  # Make files optional
+    files: Optional[List[UploadFile]] = File([])
 ):
-    print(client)
+    print("Received data:")
+    print(f"uid_party1: {uid_party1}")
+    print(f"uid_party2: {uid_party2}")
+    print(f"filed_date: {filed_date}")
+    print(f"associated_lawyers: {associated_lawyers}")
+    print(f"associated_judge: {associated_judge}")
+    print(f"case_subject: {case_subject}")
+    print(f"latest_update: {latest_update}")
+    print(f"status: {status}")
+    print(f"user_id: {user_id}")
+    print(f"client: {client}")
+    print(f"files: {files}")
     try:
         filed_date_parsed = datetime.strptime(filed_date, "%a, %d %b %Y %H:%M:%S %Z")
         case_data = {
@@ -107,7 +119,12 @@ async def submit_case(
         }
         case_result = case_collection.insert_one(case_data)
         case_id = str(case_result.inserted_id) 
-        if files:  # Only process files if they are uploaded
+        print(case_id)
+        users_collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$inc': {'pending_cases': 1}}  
+        )
+        if files: 
             stored_files = store_files_locally(user_id, case_id, files)
             try:
                 cids = [await pin_file_to_ipfs(files["file"]) for files in stored_files]
@@ -117,11 +134,13 @@ async def submit_case(
                 {"_id": case_result.inserted_id},
                 {"$set": {"file_cids": cids}}
             )
-
-        return {"message": "Case submitted successfully", "case_id": case_id}
-
+        user = users_collection.find_one({"_id":ObjectId(user_id)})
+        return {"message": "Case submitted successfully", "case_id": case_id, "user":{"user_id":user_id,"pending_cases":user['pending_cases']}}
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=400, detail=f"Error submitting case: {str(e)}")
+    
+    
     
 @app.get("/get-cases/{user_id}")
 async def get_cases(user_id: str):
@@ -131,8 +150,11 @@ async def get_cases(user_id: str):
             c["_id"] = str(c["_id"])
         return {"cases": cases}
     except Exception as e:
-        print(f"Error fetching cases: {str(e)}")  # Log the error
+        print(f"Error fetching cases: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+    
+    
+    
     
 @app.get("/case-history/{user_id}")
 async def get_cases(user_id: str):
@@ -142,5 +164,17 @@ async def get_cases(user_id: str):
             c["_id"] = str(c["_id"])
         return {"cases": cases}
     except Exception as e:
-        print(f"Error fetching cases: {str(e)}")  # Log the error
+        print(f"Error fetching cases: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+    
+
+
+@app.get('/case/{case_id}')
+async def case_details(case_id: str):
+    try:
+        case1 = case_collection.find_one({"_id": ObjectId(case_id)})
+        if not case1:raise HTTPException(status_code=404, detail="Case not found")        
+        case1["_id"] = str(case1["_id"])
+        return {"case": case1}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching case details: {str(e)}")

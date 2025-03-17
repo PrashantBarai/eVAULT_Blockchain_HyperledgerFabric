@@ -39,24 +39,25 @@ const StatCard = ({ title, value, icon, color }) => (
 );
 
 const Dashboard = () => {
-  // Dummy data - will be replac  ed with real data later
+  // Dummy data - will be replaced with real data later
   const userString = localStorage.getItem('user_data'); // Get the user data as a string
+  const userCaseDataString = localStorage.getItem('udata'); 
   let user = null;
-
+  let userCaseData = null;
   try {
+    userCaseData = JSON.parse(userCaseDataString);
     user = JSON.parse(userString); // Parse the string into an object
   } catch (error) {
     console.error('Failed to parse user data:', error);
   }
 
-  // Debugging: Log the user object and its properties
   console.log('User data from localStorage:', user);
   console.log('Username:', user ? user.username : 'No user found');
   
   const stats = {
-    pending: 5,
-    verified: 12,
-    rejected: 2,
+    pending: userCaseData.pending_cases,
+    verified: userCaseData.verified_cases,
+    rejected: userCaseData.rejected_cases,
   };
 
   const chartData = [

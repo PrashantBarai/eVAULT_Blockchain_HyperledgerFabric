@@ -120,16 +120,12 @@ const CaseSubmission = () => {
     formDataToSend.append('latest_update', formData.latestUpdate);
     formDataToSend.append('status', 'pending'); 
     formDataToSend.append('user_id', user.user_id); 
-    formDataToSend.append('client', formData.client); // Append client field
-
-    // Append files only if they exist
+    formDataToSend.append('client', formData.client);   
     if (files.length > 0) {
       files.forEach((file) => {
         formDataToSend.append('files', file);
       });
     }
-   
-
     for (let [key, value] of formDataToSend.entries()) {
       console.log(key, value);
     }
@@ -146,10 +142,14 @@ const CaseSubmission = () => {
       if (!response.ok) {
         throw new Error('Failed to submit case');
       }
-
       const result = await response.json();
       alert('Case submitted successfully!');
       console.log('Case ID:', result.case_id);
+      if (result.user?.pending_cases) {
+        localStorage.setItem('udata', JSON.stringify(result.user));
+      } else {
+        console.warn('No pending cases found in the response.');
+      }
     } catch (error) {
       console.error('Error submitting case:', error);
       alert('Failed to submit case. Please try again.');

@@ -131,7 +131,7 @@ const Cases = () => {
           <TableBody>
             {filteredCases.map((case_) => (
               <TableRow key={case_._id}>
-                <TableCell>{case_.caseId}</TableCell>
+                <TableCell>{case_._id}</TableCell>
                 <TableCell>{case_.case_subject}</TableCell>
                 <TableCell>{case_.client}</TableCell>
                 <TableCell>{case_.status}</TableCell>
