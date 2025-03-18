@@ -8,22 +8,31 @@ import {
   Container,
   Avatar,
 } from '@mui/material';
-import {
-  LockOutlined as LockOutlinedIcon,
-} from '@mui/icons-material';
+import { LockOutlined as LockOutlinedIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
-const Login = () => {
+const RegistrarLogin = () => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: Implement actual authentication
-    navigate('/registrar/dashboard');
+    try {
+      const response = await axios.post('http://localhost:8000/', {
+        email,
+        password,
+      });
+      const { access_token, user_data } = response.data;
+      localStorage.setItem('token', access_token);
+      localStorage.setItem('user_data',JSON.stringify(user_data));
+      console.log(access_token);
+      console.log(user_data);
+      navigate('/registrar/dashboard');
+    } catch (error) {
+      console.error('Login failed:', error.response?.data?.detail || error.message);
+    }
   };
 
   return (
@@ -32,6 +41,7 @@ const Login = () => {
         sx={{
           minHeight: '100vh',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -43,65 +53,47 @@ const Login = () => {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            background: 'linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%)',
+            background: 'linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%)',
           }}
         >
-          <Avatar
-            sx={{
-              m: 1,
-              bgcolor: '#3f51b5',
-              width: 56,
-              height: 56,
-            }}
-          >
+          <Avatar sx={{ m: 1, bgcolor: '#3f51b5' }}>
             <LockOutlinedIcon />
           </Avatar>
-
-          <Typography variant="h5" sx={{ mb: 3 }}>
+          <Typography component="h1" variant="h5" sx={{ mb: 3 }}>
             Registrar Login
           </Typography>
-
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
             <TextField
               margin="normal"
               required
               fullWidth
               label="Email Address"
-              name="email"
               autoComplete="email"
               autoFocus
-              value={formData.email}
-              onChange={(e) =>
-                setFormData({ ...formData, email: e.target.value })
-              }
-              sx={{ mb: 2 }}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
-
             <TextField
               margin="normal"
               required
               fullWidth
-              name="password"
               label="Password"
               type="password"
               autoComplete="current-password"
-              value={formData.password}
-              onChange={(e) =>
-                setFormData({ ...formData, password: e.target.value })
-              }
-              sx={{ mb: 3 }}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
             />
-
             <Button
               type="submit"
               fullWidth
               variant="contained"
-              sx={{
-                mt: 2,
+              sx={{ 
+                mt: 3, 
                 mb: 2,
-                py: 1.5,
                 bgcolor: '#3f51b5',
-                '&:hover': { bgcolor: '#303f9f' },
+                '&:hover': {
+                  bgcolor: '#2f3f8f',
+                }
               }}
             >
               Sign In
@@ -113,4 +105,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default RegistrarLogin;

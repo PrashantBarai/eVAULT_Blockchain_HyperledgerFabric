@@ -39,7 +39,6 @@ const StatCard = ({ title, value, icon, color }) => (
 );
 
 const Dashboard = () => {
-  // Dummy data - will be replaced with real data later
   const userString = localStorage.getItem('user_data'); // Get the user data as a string
   const userCaseDataString = localStorage.getItem('udata'); 
   let user = null;

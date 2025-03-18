@@ -9,6 +9,10 @@ import {
   Paper,
   IconButton,
   Card,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -73,7 +77,8 @@ const CaseSubmission = () => {
     associatedJudge: '',
     caseSubject: '',
     latestUpdate: '',
-    client: '', // New field for client
+    client: '',
+    caseType: '', // New field for case type
   });
   const [files, setFiles] = useState([]);
 
@@ -107,7 +112,7 @@ const CaseSubmission = () => {
 
     const userString = localStorage.getItem('user_data');
     let user = null;
-    user = JSON.parse(userString); 
+    user = JSON.parse(userString);
     console.log(user);
 
     const formDataToSend = new FormData();
@@ -118,9 +123,10 @@ const CaseSubmission = () => {
     formDataToSend.append('associated_judge', formData.associatedJudge);
     formDataToSend.append('case_subject', formData.caseSubject);
     formDataToSend.append('latest_update', formData.latestUpdate);
-    formDataToSend.append('status', 'pending'); 
-    formDataToSend.append('user_id', user.user_id); 
-    formDataToSend.append('client', formData.client);   
+    formDataToSend.append('status', 'pending');
+    formDataToSend.append('user_id', user.user_id);
+    formDataToSend.append('client', formData.client);
+    formDataToSend.append('case_type', formData.caseType); // Append case type
     if (files.length > 0) {
       files.forEach((file) => {
         formDataToSend.append('files', file);
@@ -196,6 +202,26 @@ const CaseSubmission = () => {
                   renderInput={(params) => <StyledTextField {...params} fullWidth />}
                 />
               </LocalizationProvider>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel id="case-type-label">Case Type</InputLabel>
+                <Select
+                  labelId="case-type-label"
+                  id="case-type"
+                  name="caseType"
+                  value={formData.caseType}
+                  label="Case Type"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="civil">Civil</MenuItem>
+                  <MenuItem value="corporate">Corporate</MenuItem>
+                  <MenuItem value="family">Family</MenuItem>
+                  <MenuItem value="criminal">Criminal</MenuItem>
+                  <MenuItem value="property">Property</MenuItem>
+                  <MenuItem value="labor">Labor</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} md={6}>
               <StyledTextField

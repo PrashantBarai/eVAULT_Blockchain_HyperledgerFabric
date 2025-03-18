@@ -9,6 +9,11 @@ import {
   Chip,
   Divider,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
 } from '@mui/material';
 import {
   Timeline,
@@ -31,7 +36,8 @@ const CaseDetails = () => {
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
+  const [openDialog, setOpenDialog] = useState(false); // State for confirmation dialog
+  console.log(id);
   // Fetch case details from the backend
   useEffect(() => {
     const fetchCaseDetails = async () => {
@@ -47,6 +53,53 @@ const CaseDetails = () => {
 
     fetchCaseDetails();
   }, [id]);
+
+  // Handle opening the confirmation dialog
+  const handleOpenDialog = () => {
+    setOpenDialog(true);
+  };
+
+  // Handle closing the confirmation dialog
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+  };
+
+  // Handle sending the case to the registrar
+  const handleSendToRegistrar = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const userString = localStorage.getItem('user_data');
+      if (!token) {
+        alert('You must be logged in to perform this action.');
+        return;
+      }
+      // const user = JSON.parse(userString);
+
+      const response = await axios.post(
+        `http://localhost:8000/case/${id}/send-to-registrar`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.status === 200) {
+        alert('Case successfully sent to the registrar.');
+        // Optionally, update the case data to reflect the new status
+        console.log(response.data);
+        setCaseData(prev => ({ ...prev, status: 'Sent to Registrar' }));
+      } else {
+        throw new Error('Failed to send case to registrar');
+      }
+    } catch (err) {
+      console.error('Error sending case to registrar:', err);
+      alert('Failed to send case to registrar. Please try again.');
+    } finally {
+      handleCloseDialog();
+    }
+  };
 
   if (loading) {
     return <Typography>Loading...</Typography>;
@@ -160,8 +213,48 @@ const CaseDetails = () => {
               </Box>
             </Grid>
           </Grid>
+
+          {/* "Send to Registrar" Button */}
+          <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              variant="contained"
+              onClick={handleOpenDialog}
+              sx={{
+                background: 'linear-gradient(45deg, #6B5ECD 30%, #8B7CF7 90%)',
+                color: 'white',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #5A4CAD 30%, #7B6CE7 90%)',
+                },
+              }}
+            >
+              Send to Registrar
+            </Button>
+          </Box>
         </CardContent>
       </Card>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={openDialog}
+        onClose={handleCloseDialog}
+        aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description"
+      >
+        <DialogTitle id="alert-dialog-title">Confirm Submission</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="alert-dialog-description">
+            Are you sure you want to send this case to the registrar? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleSendToRegistrar} color="primary" autoFocus>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Grid container spacing={4}>
         <Grid item xs={12} md={6}>

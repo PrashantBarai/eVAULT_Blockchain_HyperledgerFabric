@@ -48,7 +48,18 @@ const Signup = () => {
       if (response.ok) {
         const data = await response.json();
         console.log('Signup successful:', data);
-        navigate('/'); 
+        if (data.userType=='lawyer'){
+          navigate('/lawyer/login');
+        }else if (data.userType=='registrar'){
+          navigate('/registrar/login');
+        }else if (data.userType=='stamp-reporter'){
+          navigate('/stamp-reporter/login');
+        }else if (data.userType=='bench-clerk'){
+          navigate('/bench-clerk/login');
+        }else if (data.userType=='judge'){
+          navigate('/judge/login');
+        }
+        // navigate('/'); 
       } else {
         const errorData = await response.json();
         console.error('Signup failed:', errorData);

@@ -16,7 +16,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:7000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -38,7 +38,14 @@ async def signup(user: UserCreate):
         user_data["pending_cases"] = 0
         user_data["verified_cases"] = 0
         user_data["rejected_cases"] = 0
+    elif user.user_type == "registrar":
+        user_data["pending_cases"] = 0
+        user_data["verified_cases"] = 0
+        user_data["rejected_cases"] = 0
+        user_data['cases'] = []
+        user_data['notifications'] = []
     result = users_collection.insert_one(user_data)
+    
     if result.inserted_id:return {"message": "User created successfully", "user_id": str(result.inserted_id)}
     else:raise HTTPException(status_code=500, detail="Failed to create user")
 
@@ -88,20 +95,9 @@ async def submit_case(
     status: str = Form(...),
     user_id: str = Form(...),
     client: str = Form(...),
+    case_type: str = Form(...),
     files: Optional[List[UploadFile]] = File([])
 ):
-    print("Received data:")
-    print(f"uid_party1: {uid_party1}")
-    print(f"uid_party2: {uid_party2}")
-    print(f"filed_date: {filed_date}")
-    print(f"associated_lawyers: {associated_lawyers}")
-    print(f"associated_judge: {associated_judge}")
-    print(f"case_subject: {case_subject}")
-    print(f"latest_update: {latest_update}")
-    print(f"status: {status}")
-    print(f"user_id: {user_id}")
-    print(f"client: {client}")
-    print(f"files: {files}")
     try:
         filed_date_parsed = datetime.strptime(filed_date, "%a, %d %b %Y %H:%M:%S %Z")
         case_data = {
@@ -115,13 +111,14 @@ async def submit_case(
             "status": status,
             "user_id": user_id,
             "client": client,
+            "case_type":case_type,
             "file_cids": []
         }
         case_result = case_collection.insert_one(case_data)
         case_id = str(case_result.inserted_id) 
         print(case_id)
         users_collection.update_one(
-            {'_id': ObjectId(user_id)},
+            {'_id': ObjectId(user_id),"user_type":"lawyer"},
             {'$inc': {'pending_cases': 1}}  
         )
         if files: 
@@ -140,11 +137,26 @@ async def submit_case(
         print(e)
         raise HTTPException(status_code=400, detail=f"Error submitting case: {str(e)}")
     
-    
-    
+
+
+
 @app.get("/get-cases/{user_id}")
 async def get_cases(user_id: str):
     try:
+        user = users_collection.find_one({'_id': ObjectId(user_id), "user_type": "registrar"})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found or not a registrar")
+        reg_c = []
+        if "cases" in user and isinstance(user["cases"], list):  # Ensure 'cases' exists and is a list
+            for case_id in user["cases"]:
+                c = case_collection.find_one({'_id': ObjectId(case_id)})
+                if c: 
+                    c['_id'] = str(c['_id'])
+                    c['filed_date']=c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+                    c['assigned_registrar'] = str(c['assigned_registrar'])
+                    reg_c.append(c)
+                print(reg_c)
+            return {"cases": reg_c}
         cases = list(case_collection.find({"user_id": user_id}))
         for c in cases:
             c["_id"] = str(c["_id"])
@@ -152,7 +164,6 @@ async def get_cases(user_id: str):
     except Exception as e:
         print(f"Error fetching cases: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
-    
     
     
     
@@ -178,3 +189,65 @@ async def case_details(case_id: str):
         return {"case": case1}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching case details: {str(e)}")
+    
+    
+    
+    
+@app.post('/case/{case_id}/send-to-registrar')
+async def send_to_registrar(case_id: str):
+    try:
+        case1 = case_collection.find_one({"_id": ObjectId(case_id)})
+        lawyer = users_collection.find_one({"username":case1['associated_lawyer']})
+        users_collection.update_one(
+            {"_id": lawyer['_id']}, 
+            {"$inc": {"verified_cases",1}}  
+        )
+        if not case1:raise HTTPException(status_code=404, detail="Case not found")
+        registrars = list(users_collection.find({"user_type": "registrar"}))
+        registrars.sort(key=lambda r: len(r.get("cases", [])))  
+        if not registrars:raise HTTPException(status_code=404, detail="No registrars found")
+        assigned_registrar = registrars[0]
+        registrar_id = assigned_registrar["_id"]
+        users_collection.update_one(
+            {"_id": registrar_id}, 
+            {"$push": {"cases": case_id}}  
+        )
+        case_collection.update_one({"_id": ObjectId(case_id)}, {"$set": {"assigned_registrar": registrar_id}})
+        return {
+            "message": "Case assigned successfully",
+            "case_id": case_id,
+            "assigned_registrar": str(registrar_id),
+            "registrar_cases": assigned_registrar.get("cases", []) + [case_id]  
+        }
+
+    except Exception as e:raise HTTPException(status_code=400, detail=f"Error assigning case: {str(e)}")
+
+
+
+    
+@app.get('/registrar/{user_id}')
+async def registrar_dashboard(user_id: str):
+    try:
+        registrar = users_collection.find_one({"_id": ObjectId(user_id), "user_type": "registrar"})
+        if not registrar:
+            raise HTTPException(status_code=404, detail="Registrar not found")
+        assigned_cases = registrar.get("cases", [])
+        # verified_cases = users_collection.find_one({"_id":ObjectId(user_id)})['verified_cases']
+        # rejected_cases = users_collection.find_one({"_id":ObjectId(user_id)})['rejected_cases']
+        total_cases = len(assigned_cases)
+        notifications = registrar.get("notifications", [])
+        return {
+            "name": registrar.get("name", "Registrar"),
+            # "designation": registrar.get("designation", "Registrar"),
+            # "court": registrar.get("court", "Unknown Court"),
+            "total_cases": total_cases,
+            # "verified_cases": verified_cases,
+            # "rejected_cases": rejected_cases,
+            "notifications": len(notifications)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching registrar data: {str(e)}")
+
+
+
