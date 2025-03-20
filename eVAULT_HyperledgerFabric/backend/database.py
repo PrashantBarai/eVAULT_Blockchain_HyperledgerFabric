@@ -7,3 +7,4 @@ db = client['evault']
 # Collections
 users_collection = db["users"]
 case_collection = db["cases"]
+lawyer_notification = db["lawyer_notifications"]

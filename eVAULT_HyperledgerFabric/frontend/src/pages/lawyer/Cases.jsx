@@ -54,6 +54,7 @@ const Cases = () => {
         }
 
         const data = await response.json();
+        console.log(data);
         setCases(data.cases);
       } catch (err) {
         setError(err.message);

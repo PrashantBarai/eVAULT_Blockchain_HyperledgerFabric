@@ -79,6 +79,7 @@ const CaseSubmission = () => {
     latestUpdate: '',
     client: '',
     caseType: '', // New field for case type
+    description: '', // New field for description
   });
   const [files, setFiles] = useState([]);
 
@@ -102,7 +103,6 @@ const CaseSubmission = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Retrieve JWT token from localStorage
     const token = localStorage.getItem('token');
     console.log("Token from localStorage:", token);
     if (!token) {
@@ -127,6 +127,7 @@ const CaseSubmission = () => {
     formDataToSend.append('user_id', user.user_id);
     formDataToSend.append('client', formData.client);
     formDataToSend.append('case_type', formData.caseType); // Append case type
+    formDataToSend.append('description', formData.description); // Append description
     if (files.length > 0) {
       files.forEach((file) => {
         formDataToSend.append('files', file);
@@ -256,6 +257,17 @@ const CaseSubmission = () => {
                 label="Case Subject"
                 name="caseSubject"
                 value={formData.caseSubject}
+                onChange={handleChange}
+                multiline
+                rows={3}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <StyledTextField
+                fullWidth
+                label="Description"
+                name="description"
+                value={formData.description}
                 onChange={handleChange}
                 multiline
                 rows={3}

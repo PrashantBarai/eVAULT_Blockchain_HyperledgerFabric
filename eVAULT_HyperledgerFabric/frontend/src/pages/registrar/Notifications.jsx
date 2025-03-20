@@ -1,156 +1,149 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Button,
   TextField,
-  Chip,
+  InputAdornment,
+  CircularProgress
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  CalendarToday as CalendarTodayIcon,
   ArrowForward as ArrowForwardIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
-const Notifications = () => {
+const Cases = () => {
   const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const notifications = [
-    {
-      id: 1,
-      caseId: 'CASE123',
-      title: 'New Case Assignment',
-      summary: 'Property Dispute in Mumbai Suburb',
-      date: '2025-03-01 10:30 AM',
-      status: 'New'
-    },
-    {
-      id: 2,
-      caseId: 'CASE124',
-      title: 'New Case Assignment',
-      summary: 'Corporate Fraud Investigation',
-      date: '2025-03-01 09:15 AM',
-      status: 'New'
-    },
-    {
-      id: 3,
-      caseId: 'CASE125',
-      title: 'New Case Assignment',
-      summary: 'Environmental Protection Case',
-      date: '2025-02-28 04:45 PM',
-      status: 'New'
+  useEffect(() => {
+    const fetchCases = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('You must be logged in to view cases.');
+    
+        const userString = localStorage.getItem('user_data');
+        if (!userString) throw new Error('User data not found.');
+    
+        const user = JSON.parse(userString);
+        const userId = user.user_id;
+    
+        const response = await fetch(`http://localhost:8000/get-cases/${userId}`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+    
+        if (!response.ok) throw new Error('Failed to fetch cases.');
+    
+        const data = await response.json();
+        console.log('Fetched cases:', data);
+        setCases(data.cases ?? []);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchCases();
+  }, []);
+
+  const filteredCases = cases.filter((case_) =>
+    case_?._id?.toString().includes(searchTerm.toLowerCase()) ||
+    case_?.case_subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    case_?.associated_lawyers?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    case_?.case_type?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const getPriorityColor = (priority) => {
+    switch (priority?.toLowerCase()) {
+      case 'high': return '#f44336';
+      case 'medium': return '#ff9800';
+      case 'low': return '#4caf50';
+      default: return '#4caf50';
     }
-  ];
+  };
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" sx={{ mb: 3 }}>Notifications</Typography>
+      <Paper elevation={0} sx={{ p: 3, mb: 3, background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)', color: 'white', borderRadius: 2 }}>
+        <Typography variant="h4" gutterBottom>Pending Cases</Typography>
+        <Typography variant="subtitle1">Cases requiring verification</Typography>
+      </Paper>
 
-      <Box sx={{ 
-        display: 'flex', 
-        gap: 2, 
-        mb: 3,
-        width: '100%'
-      }}>
-        <Button 
-          variant="contained" 
-          sx={{ 
-            bgcolor: '#3f51b5',
-            '&:hover': { bgcolor: '#303f9f' }
-          }}
-        >
-          Today
-        </Button>
-        <Button 
-          variant="outlined" 
-          sx={{ color: '#3f51b5', borderColor: '#3f51b5' }}
-        >
-          This Week
-        </Button>
-        <Button 
-          variant="outlined" 
-          sx={{ color: '#3f51b5', borderColor: '#3f51b5' }}
-        >
-          This Month
-        </Button>
-        <Button 
-          variant="outlined" 
-          startIcon={<CalendarTodayIcon />}
-          sx={{ 
-            ml: 'auto',
-            color: '#3f51b5', 
-            borderColor: '#3f51b5'
-          }}
-        >
-          Custom Date
-        </Button>
+      <Box sx={{ mb: 3 }}>
+        <TextField
+          fullWidth
+          placeholder="Search by Case ID, Title, Lawyer, or Department"
+          variant="outlined"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
+        />
       </Box>
 
-      <TextField
-        fullWidth
-        placeholder="Search notifications"
-        variant="outlined"
-        sx={{ mb: 3 }}
-        InputProps={{
-          startAdornment: <SearchIcon sx={{ color: '#3f51b5', mr: 1 }} />,
-        }}
-      />
-
-      {notifications.map((notification) => (
-        <Card 
-          key={notification.id} 
-          sx={{ 
-            mb: 2,
-            background: 'linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%)',
-            transition: 'transform 0.2s',
-            '&:hover': {
-              transform: 'translateX(5px)',
-              boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
-            }
-          }}
-        >
-          <CardContent sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            p: 3
-          }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                <Typography variant="h6">{notification.title}</Typography>
-                <Chip 
-                  label={notification.status} 
-                  sx={{ 
-                    bgcolor: '#3f51b5',
-                    color: 'white'
-                  }} 
-                />
-              </Box>
-              <Typography color="textSecondary">Case ID: {notification.caseId}</Typography>
-              <Typography color="textSecondary">{notification.summary}</Typography>
-              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-                {notification.date}
-              </Typography>
-            </Box>
-            <Button
-              variant="contained"
-              endIcon={<ArrowForwardIcon />}
-              onClick={() => navigate(`/registrar/case-assignment`)}
-              sx={{ 
-                bgcolor: '#3f51b5',
-                '&:hover': { bgcolor: '#303f9f' }
-              }}
-            >
-              Take Action
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+          <CircularProgress />
+        </Box>
+      ) : error ? (
+        <Typography color="error" align="center">{error}</Typography>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                <TableCell><Typography variant="subtitle2">Case ID</Typography></TableCell>
+                <TableCell><Typography variant="subtitle2">Title</Typography></TableCell>
+                <TableCell><Typography variant="subtitle2">Lawyer</Typography></TableCell>
+                <TableCell><Typography variant="subtitle2">Department</Typography></TableCell>
+                <TableCell><Typography variant="subtitle2">Submission Date</Typography></TableCell>
+                <TableCell><Typography variant="subtitle2">Priority</Typography></TableCell>
+                <TableCell><Typography variant="subtitle2">Action</Typography></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredCases.map((case_) => (
+                <TableRow key={case_.id} sx={{ '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' } }}>
+                  <TableCell><Typography variant="body2" sx={{ fontWeight: 500 }}>{case_._id}</Typography></TableCell>
+                  <TableCell><Typography variant="body2">{case_.case_subject}</Typography></TableCell>
+                  <TableCell><Typography variant="body2">{case_.associated_lawyers}</Typography></TableCell>
+                  <TableCell><Typography variant="body2">{case_.case_type}</Typography></TableCell>
+                  <TableCell><Typography variant="body2">{case_.filed_date}</Typography></TableCell>
+                  {/* <TableCell>
+                    <Typography variant="body2" sx={{ color: getPriorityColor(case_.priority), fontWeight: 500 }}>{case_.priority}</Typography>
+                  </TableCell> */}
+                  <TableCell>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      endIcon={<ArrowForwardIcon />}
+                      onClick={() => navigate(`/registrar/case-verification/${case_._id}`)}
+                      sx={{ color: '#3f51b5', borderColor: '#3f51b5', '&:hover': { borderColor: '#3f51b5', bgcolor: 'rgba(63, 81, 181, 0.1)' } }}
+                    >
+                      Review
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
     </Box>
   );
 };
 
-export default Notifications;
+export default Cases;

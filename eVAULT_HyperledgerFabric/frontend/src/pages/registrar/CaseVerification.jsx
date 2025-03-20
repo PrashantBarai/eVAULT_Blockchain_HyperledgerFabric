@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -15,20 +15,22 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  CircularProgress, // Add this import
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
+import axios from 'axios';
 
 const departments = [
   { id: 'civil', name: 'Civil Department' },
-  { id: 'criminal', name: 'Criminal Department' },
+  { id: 'corporate', name: 'Corporate Department' },
   { id: 'family', name: 'Family Court Department' },
-  { id: 'corporate', name: 'Corporate Law Department' },
-  { id: 'tax', name: 'Tax Law Department' },
-  { id: 'constitutional', name: 'Constitutional Law Department' },
+  { id: 'criminal', name: 'Criminal Law Department' },
+  { id: 'property', name: 'Property Law Department' },
+  { id: 'labor', name: 'Labor Department' },
 ];
 
 const CaseVerification = () => {
@@ -39,112 +41,176 @@ const CaseVerification = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [openApproveDialog, setOpenApproveDialog] = useState(false);
+  const [caseDetails, setCaseDetails] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const handleApprove = () => {
+  useEffect(() => {
+    const fetchCaseDetails = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('You must be logged in to view case details.');
+
+        const response = await axios.get(`http://localhost:8000/registrar/case-verification/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.data && response.data.case) {
+          setCaseDetails(response.data.case);
+        } else {
+          throw new Error('Case details not found.');
+        }
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCaseDetails();
+  }, [id]);
+
+  const handleApprove = async () => {
     if (selectedDepartment) {
-      // TODO: Implement case approval logic with department
-      setOpenApproveDialog(false);
-      setShowSuccess(true);
-      setTimeout(() => {
-        navigate('/registrar/case-assignment');
-      }, 2000);
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('You must be logged in to approve cases.');
+
+        // Call the backend API to approve the case
+        await axios.post(
+          `http://localhost:8000/case/${id}/send-to-registrar`,
+          { department: selectedDepartment },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        setOpenApproveDialog(false);
+        setShowSuccess(true);
+        setTimeout(() => {
+          navigate('/registrar/case-assignment');
+        }, 2000);
+      } catch (err) {
+        setError(err.message);
+      }
     }
   };
 
-  const handleReject = () => {
-    // TODO: Implement case rejection logic
-    setOpenRejectDialog(false);
-    setShowSuccess(true);
-    setTimeout(() => {
-      navigate('/registrar/case-assignment');
-    }, 2000);
+  const handleReject = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('You must be logged in to reject cases.');
+      await axios.post(
+        `http://localhost:8000/case/${id}/reject`,
+        { reason: rejectReason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setOpenRejectDialog(false);
+      setShowSuccess(true);
+      // setTimeout(() => {
+      //   navigate('/registrar/case-assignment');
+      // }, 2000);
+    } catch (err) {
+      setError(err.message);
+    }
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+        <CircularProgress /> {/* Use CircularProgress here */}
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert severity="error" sx={{ mb: 3 }}>
+        {error}
+      </Alert>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
       {showSuccess && (
-        <Alert 
-          severity="success" 
-          sx={{ mb: 3 }}
-        >
+        <Alert severity="success" sx={{ mb: 3 }}>
           Case has been successfully processed! Redirecting...
         </Alert>
       )}
 
-      <Paper 
+      <Paper
         elevation={0}
-        sx={{ 
+        sx={{
           p: 3,
           mb: 3,
           background: 'linear-gradient(135deg, #3f51b5 0%, #5c6bc0 100%)',
           color: 'white',
-          borderRadius: 2
+          borderRadius: 2,
         }}
       >
         <Typography variant="h4" gutterBottom>Case Verification</Typography>
         <Typography variant="subtitle1">Case ID: {id}</Typography>
       </Paper>
 
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Case Details</Typography>
-        <Divider sx={{ my: 2 }} />
-        
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" color="textSecondary">Case Title</Typography>
-          <Typography variant="body1">Property Dispute in Mumbai Suburb</Typography>
-        </Box>
+      {caseDetails && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>Case Details</Typography>
+          <Divider sx={{ my: 2 }} />
 
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" color="textSecondary">Case Type</Typography>
-          <Typography variant="body1">Civil Case</Typography>
-        </Box>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" color="textSecondary">Case Title</Typography>
+            <Typography variant="body1">{caseDetails.case_subject}</Typography>
+          </Box>
 
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" color="textSecondary">Lawyer Information</Typography>
-          <Typography variant="body1">Adv. Sarah Johnson</Typography>
-          <Typography variant="body2" color="textSecondary">Bar Council ID: BCI123456</Typography>
-        </Box>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" color="textSecondary">Case Type</Typography>
+            <Typography variant="body1">{caseDetails.case_type}</Typography>
+          </Box>
 
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" color="textSecondary">Case Summary</Typography>
-          <Typography variant="body1">
-            This case involves a property dispute between two parties in the Mumbai suburban area.
-            The dispute concerns ownership rights and boundary demarcation of a residential property.
-          </Typography>
-        </Box>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" color="textSecondary">Lawyer Information</Typography>
+            <Typography variant="body1">{caseDetails.associated_lawyers}</Typography>
+            <Typography variant="body2" color="textSecondary">Bar Council ID: BCI123456</Typography>
+          </Box>
 
-        <Alert severity="info" sx={{ mb: 3 }}>
-          Note: Uploaded documents and media files are not accessible at this stage.
-        </Alert>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" color="textSecondary">Case Summary</Typography>
+            <Typography variant="body1">{caseDetails.description}</Typography>
+          </Box>
 
-        <Box sx={{ 
-          display: 'flex', 
-          gap: 2,
-          justifyContent: 'flex-end',
-          mt: 4 
-        }}>
-          <Button
-            variant="contained"
-            color="error"
-            startIcon={<CancelIcon />}
-            onClick={() => setOpenRejectDialog(true)}
-          >
-            Reject Case
-          </Button>
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<CheckCircleIcon />}
-            onClick={() => setOpenApproveDialog(true)}
-          >
-            Approve & Forward
-          </Button>
-        </Box>
-      </Paper>
+          <Alert severity="info" sx={{ mb: 3 }}>
+            Note: Uploaded documents and media files are not accessible at this stage.
+          </Alert>
+
+          <Box sx={{
+            display: 'flex',
+            gap: 2,
+            justifyContent: 'flex-end',
+            mt: 4,
+          }}>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<CancelIcon />}
+              onClick={() => setOpenRejectDialog(true)}
+            >
+              Reject Case
+            </Button>
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<CheckCircleIcon />}
+              onClick={() => setOpenApproveDialog(true)}
+            >
+              Approve & Forward
+            </Button>
+          </Box>
+        </Paper>
+      )}
 
       {/* Approve Dialog */}
-      <Dialog 
-        open={openApproveDialog} 
+      <Dialog
+        open={openApproveDialog}
         onClose={() => setOpenApproveDialog(false)}
         maxWidth="sm"
         fullWidth
@@ -170,8 +236,8 @@ const CaseVerification = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenApproveDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleApprove} 
+          <Button
+            onClick={handleApprove}
             color="success"
             disabled={!selectedDepartment}
           >
