@@ -32,17 +32,17 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import axios from 'axios';
 
 const CaseDetails = () => {
-  const { id } = useParams(); // Get the case_id from the URL
+  const { id } = useParams(); 
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [openDialog, setOpenDialog] = useState(false); // State for confirmation dialog
+  const [openDialog, setOpenDialog] = useState(false); 
   console.log(id);
-  // Fetch case details from the backend
+  
   useEffect(() => {
     const fetchCaseDetails = async () => {
       try {
-        const response = await axios.get(`http://localhost:8000/case/${id}`); // Replace with your API endpoint
+        const response = await axios.get(`http://localhost:8000/case/${id}`); 
         setCaseData(response.data.case);
       } catch (err) {
         setError(err.message || 'Failed to fetch case details');
@@ -54,7 +54,7 @@ const CaseDetails = () => {
     fetchCaseDetails();
   }, [id]);
 
-  // Handle opening the confirmation dialog
+  
   const handleOpenDialog = () => {
     setOpenDialog(true);
   };

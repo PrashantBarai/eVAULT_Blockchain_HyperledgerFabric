@@ -11,12 +11,13 @@ from backend.database import users_collection,case_collection, lawyer_notificati
 from typing import List, Optional
 from bson import ObjectId
 import os
+import uuid
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:7000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -44,6 +45,14 @@ async def signup(user: UserCreate):
         user_data["rejected_cases"] = 0
         user_data['cases'] = []
         user_data['notifications'] = []
+    elif user.user_type == "stamp-reporter":
+        user_data["pending_cases"] = 0
+        user_data["verified_case_number"] = 0
+        user_data["rejected_case_number"] = 0
+        user_data["verified_cases"] = []
+        user_data["rejected_cases"] = []
+        user_data['digital_sign'] = str(uuid.uuid1())
+        user_data['cases'] = []
     result = users_collection.insert_one(user_data)
     
     if result.inserted_id:return {"message": "User created successfully", "user_id": str(result.inserted_id)}
@@ -146,40 +155,38 @@ async def submit_case(
 
 @app.get("/get-cases/{user_id}")
 async def get_cases(user_id: str):
-    # try:
     user = users_collection.find_one({'_id': ObjectId(user_id)})
     reg_c = []
     
-    print(user)
-    if user and user['user_type']=='registrar':
+    print(f"User: {user}")
+    if user and (user['user_type'] == 'registrar' or user['user_type'] == 'stamp-reporter'):
         
         if "cases" in user:
             for case_id in user["cases"]:
-                print(case_id)
+                print(f"Case ID: {case_id}")
                 c = case_collection.find_one({'_id': ObjectId(case_id)})
-                print(c)
+                print(f"Case: {c}")
                 if c: 
                     c['_id'] = str(c['_id'])
-                    c['filed_date']=c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+                    c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
                     c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
                     reg_c.append(c)
-                print(reg_c)
+                print(f"Registrar Cases: {reg_c}")
             return {"cases": reg_c}
     
     cases = list(case_collection.find({"user_id": user_id}))
+    print(f"Cases for user {user_id}: {cases}")
     for c in cases:
         c["_id"] = str(c["_id"])
-        c['filed_date']=c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+        c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
         c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
     return {"cases": cases}
-    # except Exception as e:
-    #     print(f"Error fetching cases: {str(e)}")
-    #     raise HTTPException(status_code=500, detail="Internal server error")
-    
-    
+
+
+
     
 @app.get("/case-history/{user_id}")
-async def get_cases(user_id: str):
+async def case_history(user_id: str):
     try:
         cases = list(case_collection.find({"user_id": user_id}))
         for c in cases:
@@ -227,7 +234,7 @@ async def send_to_registrar(case_id: str):
         # Append the case_id to the registrar's cases list and update in MongoDB
         users_collection.update_one(
             {"_id": registrar_id}, 
-            {"$push": {"cases": case_id}}  # Fix: Append case_id to the registrar's case list
+            {"$addToSet": {"cases": case_id}}  # Ensures uniqueness
         )
         # Assign the registrar to the case
         case_collection.update_one(
@@ -282,40 +289,44 @@ async def case_verification(case_id: str):
     return {"case": case1}
 
 
-
 @app.post("/case/{case_id}/reject")
 async def case_reject(case_id: str, request: Request):
     try:
-        # Check if the case exists
         case1 = case_collection.find_one({"_id": ObjectId(case_id)})
         if not case1:
             raise HTTPException(status_code=404, detail="Case not found")
-
-        # Extract the reason from the request body
         data = await request.json()
         reason = data.get("reason")
         if not reason:
             raise HTTPException(status_code=400, detail="Reason for rejection is required")
-
-        # Update the case status
+        
+        # Update the case status and rejection reason
         case_collection.update_one(
             {"_id": ObjectId(case_id)},
             {"$set": {"status": "Rejected", "rejected": {"status": True, "reason": reason}}}
         )
-
-        # Add a notification to the lawyer_notification collection
+        
+        # Add the case ID to the rejected_cases list of the stamp reporter
+        stamp_reporter_id = case1.get("assigned_stamp_reporter")
+        if stamp_reporter_id:
+            users_collection.update_one(
+                {"_id": ObjectId(stamp_reporter_id)},
+                {"$addToSet": {"rejected_cases": case_id}}
+            )
+        
+        # Add a notification for the lawyer
         notification_data = {
             "case_id": case_id,
             "message": f"Case rejected: {reason}",
             "timestamp": datetime.now(),
-            "lawyer_id": case1["user_id"]  # Assuming the lawyer's ID is stored in the case
+            "lawyer_id": case1["user_id"]
         }
         lawyer_notification.insert_one(notification_data)
 
         return {"message": "Case rejected successfully", "case_id": case_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error rejecting case: {str(e)}")
-    
+
 
 
 @app.get('/lawyer/notifs/{lawyer_id}')
@@ -329,7 +340,111 @@ async def get_notifications(lawyer_id: str):
                 "message": notification.get("message", ""),
                 "timestamp": notification.get("timestamp", "").strftime('%Y-%m-%d %H:%M:%S')
             })
-
         return {"notifications": formatted_notifications}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching notifications: {str(e)}")
+    
+    
+@app.post('/registrar/case-assignment/{case_id}')
+async def send_to_stamp_reporter(case_id: str):
+    print(case_id)
+    try:
+        case = case_collection.find_one({"_id": ObjectId(case_id)})
+        print(case)
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        registrar = users_collection.find_one({"_id": ObjectId(case.get("assigned_registrar"))})
+        if not registrar:
+            raise HTTPException(status_code=404, detail="Registrar not found")
+        stamp_reporters = list(users_collection.find({"user_type": "stamp-reporter"}))
+        if not stamp_reporters:  
+            raise HTTPException(status_code=400, detail="No stamp reporters found")
+        stamp_reporters.sort(key=lambda sr: len(sr.get("cases", [])))
+        assigned_reporter = stamp_reporters[0]
+        reporter_id = assigned_reporter["_id"]
+
+        users_collection.update_one(
+            {"_id": reporter_id},
+            {"$addToSet": {"cases": case_id}}  # Ensures uniqueness
+        )
+
+        case_collection.update_one(
+            {"_id": ObjectId(case_id)},
+            {"$set": {"assigned_stamp_reporter": str(reporter_id)}}
+        )
+
+        return {
+            "message": "Case assigned to stamp reporter successfully",
+            "case_id": case_id,
+            "assigned_stamp_reporter": str(reporter_id),
+            "reporter_cases": assigned_reporter.get("cases", []) + [case_id]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error assigning case: {str(e)}")
+
+
+# Stamp Reporter
+@app.post("/case/{case_id}/accept")
+async def accept_case(case_id: str, request: Request):
+    try:
+        case1 = case_collection.find_one({"_id": ObjectId(case_id)})
+        if not case1:
+            raise HTTPException(status_code=404, detail="Case not found")
+        
+        data = await request.json()
+        digital_signature = data.get("digital_signature")
+        if not digital_signature:
+            raise HTTPException(status_code=400, detail="Digital signature is required")
+        
+        stamp_reporter = users_collection.find_one({"_id": ObjectId(case1.get("assigned_stamp_reporter"))})
+        if not stamp_reporter:
+            raise HTTPException(status_code=404, detail="Stamp reporter not found")
+        
+        if digital_signature != stamp_reporter.get("digital_sign"):
+            raise HTTPException(status_code=400, detail="Invalid digital signature")
+        
+        # Update the case status to Verified
+        case_collection.update_one(
+            {"_id": ObjectId(case_id)},
+            {"$set": {"status": "Verified", "approved": True}}
+        )
+        
+        # Add the case ID to the verified_cases list of the stamp reporter
+        users_collection.update_one(
+            {"_id": ObjectId(stamp_reporter["_id"])},
+            {"$addToSet": {"verified_cases": case_id}}
+        )
+        
+        # Add a notification for the lawyer
+        notification_data = {
+            "case_id": case_id,
+            "message": f"Case '{case1['case_subject']}' (ID: {case_id}) has been verified by the stamp reporter.",
+            "timestamp": datetime.now(),
+            "lawyer_id": case1["user_id"]
+        }
+        lawyer_notification.insert_one(notification_data)
+
+        return {"message": "Case accepted and verified successfully", "case_id": case_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error accepting case: {str(e)}")
+
+
+@app.get("/all-cases/{user_id}")
+async def get_all_cases(user_id: str):
+    try:
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        case_ids = user.get("verified_cases", []) + user.get("rejected_cases", [])
+        all_cases = list(case_collection.find({"_id": {"$in": [ObjectId(case_id) for case_id in case_ids]}}))
+
+        for case in all_cases:
+            case["_id"] = str(case["_id"])
+            case['filed_date'] = case['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+            case['assigned_registrar'] = str(case.get('assigned_registrar', ''))
+
+        return {"cases": all_cases}
+    except Exception as e:
+        print(f"Error fetching all cases: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")

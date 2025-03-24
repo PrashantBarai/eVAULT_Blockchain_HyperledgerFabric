@@ -122,9 +122,7 @@ const Cases = () => {
                   <TableCell><Typography variant="body2">{case_.associated_lawyers}</Typography></TableCell>
                   <TableCell><Typography variant="body2">{case_.case_type}</Typography></TableCell>
                   <TableCell><Typography variant="body2">{case_.filed_date}</Typography></TableCell>
-                  {/* <TableCell>
-                    <Typography variant="body2" sx={{ color: getPriorityColor(case_.priority), fontWeight: 500 }}>{case_.priority}</Typography>
-                  </TableCell> */}
+                  
                   <TableCell>
                     <Button
                       variant="outlined"

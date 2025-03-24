@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -22,60 +22,50 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
 } from '@mui/icons-material';
+import axios from 'axios';
 
 const CaseHistory = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const cases = [
-    {
-      id: 'CASE123',
-      title: 'Property Dispute in Mumbai Suburb',
-      status: 'Approved',
-      verificationDate: '2025-03-01',
-      lawyer: 'Adv. Sarah Johnson',
-      reason: 'All documents verified and complete',
-    },
-    {
-      id: 'CASE124',
-      title: 'Corporate Fraud Investigation',
-      status: 'Rejected',
-      verificationDate: '2025-03-01',
-      lawyer: 'Adv. Michael Chen',
-      reason: 'Incomplete documentation',
-    },
-    {
-      id: 'CASE125',
-      title: 'Environmental Protection Case',
-      status: 'Approved',
-      verificationDate: '2025-02-28',
-      lawyer: 'Adv. Priya Sharma',
-      reason: 'Valid environmental clearances provided',
-    },
-    {
-      id: 'CASE126',
-      title: 'Intellectual Property Rights',
-      status: 'Approved',
-      verificationDate: '2025-02-28',
-      lawyer: 'Adv. John Smith',
-      reason: 'Patent documentation verified',
-    },
-    {
-      id: 'CASE127',
-      title: 'Family Inheritance Dispute',
-      status: 'Rejected',
-      verificationDate: '2025-02-27',
-      lawyer: 'Adv. Rahul Verma',
-      reason: 'Missing succession certificates',
-    },
-  ];
+  useEffect(() => {
+    const fetchVerifiedCases = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('You must be logged in to view cases.');
+
+        const userString = localStorage.getItem('user_data');
+        if (!userString) throw new Error('User data not found.');
+
+        const user = JSON.parse(userString);
+        const userId = user.user_id;
+
+        const response = await axios.get(`http://localhost:8000/all-cases/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        console.log(response);
+        if (response.status !== 200) throw new Error('Failed to fetch verified cases.');
+
+        setCases(response.data.cases ?? []);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchVerifiedCases();
+  }, []);
 
   const filteredCases = cases.filter(
     (case_) =>
       (filterStatus === 'all' || case_.status.toLowerCase() === filterStatus) &&
-      (case_.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       case_.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       case_.lawyer.toLowerCase().includes(searchTerm.toLowerCase()))
+      (case_._id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       case_.case_subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       case_.associated_lawyers.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const handleStatusChange = (event, newStatus) => {
@@ -199,7 +189,7 @@ const CaseHistory = () => {
           <TableBody>
             {filteredCases.map((case_) => (
               <TableRow 
-                key={case_.id}
+                key={case_._id}
                 sx={{ 
                   '&:hover': { 
                     bgcolor: 'rgba(0, 0, 0, 0.04)',
@@ -209,17 +199,17 @@ const CaseHistory = () => {
               >
                 <TableCell>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                    {case_.id}
+                    {case_._id}
                   </Typography>
                 </TableCell>
                 <TableCell>
-                  <Typography variant="body2">{case_.title}</Typography>
+                  <Typography variant="body2">{case_.case_subject}</Typography>
                 </TableCell>
                 <TableCell>
-                  <Typography variant="body2">{case_.lawyer}</Typography>
+                  <Typography variant="body2">{case_.associated_lawyers}</Typography>
                 </TableCell>
                 <TableCell>
-                  <Typography variant="body2">{case_.verificationDate}</Typography>
+                  <Typography variant="body2">{case_.filed_date}</Typography>
                 </TableCell>
                 <TableCell>
                   <Chip 

@@ -65,24 +65,56 @@ const CaseVerification = () => {
     { type: 'video', name: 'Testimony.mp4', size: '15.4 MB' },
   ];
 
-  const handleApprove = () => {
-    if (digitalSignature) {
-      // TODO: Implement case approval logic with digital signature
+  const handleApprove = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:8000/case/${id}/accept`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ digital_signature: digitalSignature }),
+      });
+
+      if (!response.ok) throw new Error('Failed to accept case.');
+
+      const data = await response.json();
+      console.log('Case accepted:', data);
       setOpenSignDialog(false);
       setShowSuccess(true);
       setTimeout(() => {
         navigate('/stampreporter/dashboard');
       }, 2000);
+    } catch (err) {
+      console.error('Error accepting case:', err);
     }
   };
 
-  const handleReject = () => {
-    // TODO: Implement case rejection logic
-    setOpenRejectDialog(false);
-    setShowSuccess(true);
-    setTimeout(() => {
-      navigate('/stampreporter/dashboard');
-    }, 2000);
+  const handleReject = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:8000/case/${id}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: rejectReason }),
+      });
+
+      if (!response.ok) throw new Error('Failed to reject case.');
+
+      const data = await response.json();
+      console.log('Case rejected:', data);
+      setOpenRejectDialog(false);
+      setShowSuccess(true);
+      setTimeout(() => {
+        navigate('/stampreporter/dashboard');
+      }, 2000);
+    } catch (err) {
+      console.error('Error rejecting case:', err);
+    }
   };
 
   return (

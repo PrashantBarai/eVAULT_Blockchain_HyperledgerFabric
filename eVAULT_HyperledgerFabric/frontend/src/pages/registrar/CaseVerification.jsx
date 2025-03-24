@@ -15,7 +15,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  CircularProgress, // Add this import
+  CircularProgress,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -75,24 +75,31 @@ const CaseVerification = () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) throw new Error('You must be logged in to approve cases.');
-
-        // Call the backend API to approve the case
-        await axios.post(
-          `http://localhost:8000/case/${id}/send-to-registrar`,
-          { department: selectedDepartment },
+  
+        const requestData = { department: selectedDepartment };
+        console.log("Sending request to API:", requestData);  // Debugging log
+  
+        const response = await axios.post(
+          `http://localhost:8000/registrar/case-assignment/${id}`, 
+          requestData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-
+  
+        console.log("Response:", response.data);  // Debugging log
+  
         setOpenApproveDialog(false);
         setShowSuccess(true);
         setTimeout(() => {
-          navigate('/registrar/case-assignment');
+          navigate('/registrar/dashboard');
         }, 2000);
       } catch (err) {
-        setError(err.message);
+        console.error("API Error:", err.response ? err.response.data : err.message);
+        setError(err.response ? err.response.data.message : err.message);
       }
     }
   };
+  
+  
 
   const handleReject = async () => {
     try {

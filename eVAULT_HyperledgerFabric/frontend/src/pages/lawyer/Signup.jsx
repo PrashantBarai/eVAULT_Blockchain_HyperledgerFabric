@@ -53,9 +53,9 @@ const Signup = () => {
         }else if (data.userType=='registrar'){
           navigate('/registrar/login');
         }else if (data.userType=='stamp-reporter'){
-          navigate('/stamp-reporter/login');
+          navigate('/stampreporter/login');
         }else if (data.userType=='bench-clerk'){
-          navigate('/bench-clerk/login');
+          navigate('/benchclerk/login');
         }else if (data.userType=='judge'){
           navigate('/judge/login');
         }

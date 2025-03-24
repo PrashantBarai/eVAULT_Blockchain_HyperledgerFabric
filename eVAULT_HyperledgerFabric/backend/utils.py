@@ -11,10 +11,6 @@ from backend.config import *
 import requests
 import uuid
 import os
-# load_dotenv()
-
-# jwt=os.getenv("JWT")
-# print(jwt)
 
 def get_user(email: str):
     user = users_collection.find_one({"email": email})
