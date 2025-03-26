@@ -1,0 +1,32 @@
+{
+  "port": 9090,
+  "endorsing_organizations": [
+    {
+      "name": "LawyersOrg"
+    },
+    {
+      "name": "RegistrarsOrg"
+    },
+    {
+      "name": "StampReportersOrg"
+    },
+    {
+      "name": "BenchClerksOrg"
+    },
+    {
+      "name": "JudgesOrg"
+    }
+  ],
+  "channels": [
+    {
+      "name": "evault-channel",
+      "endorsing_organizations": [
+        "LawyersOrg",
+        "RegistrarsOrg",
+        "StampReportersOrg",
+        "BenchClerksOrg",
+        "JudgesOrg"
+      ]
+    }
+  ]
+}
