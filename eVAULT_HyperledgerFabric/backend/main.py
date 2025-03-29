@@ -6,6 +6,8 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from backend.models import *
 from backend.utils import *
+from bson import ObjectId
+from fastapi.encoders import jsonable_encoder
 from backend.config import *
 from backend.database import users_collection,case_collection, lawyer_notification, benchclerk_notification
 from typing import List, Optional
@@ -13,6 +15,7 @@ from bson import ObjectId
 import os
 import uuid
 
+load_dotenv()
 app = FastAPI()
 
 app.add_middleware(
@@ -79,6 +82,9 @@ async def login(user: UserLogin):
         "email": user["email"],
         "user_type": user["user_type"],
     }
+    user_data["pending_cases"] = 0
+    user_data["verified_cases"] = 0
+    user_data["rejected_cases"] = 0
     return {"access_token": access_token, "token_type": "bearer", "user_data": user_data}
 
 
@@ -89,14 +95,45 @@ UPLOAD_DIR = "uploads"
 def store_files_locally(user_id: str, case_id: str, files: List[UploadFile]) -> List[str]:
     user_dir = os.path.join(UPLOAD_DIR, user_id)
     case_dir = os.path.join(user_dir, case_id)
-    os.makedirs(case_dir, exist_ok=True)  
+    os.makedirs(case_dir, exist_ok=True)
+
     stored_files = []
     for file in files:
+        file_content = file.file.read()  # Read file once
+        if not file_content:  # Check if file is empty
+            print(f"Warning: {file.filename} is empty!")
+            continue
+        
         file_path = os.path.join(case_dir, file.filename)
         with open(file_path, "wb") as f:
-            f.write(file.file.read())  # Save file locally
-        stored_files.append({"file":file,"filepath":file_path})
+            f.write(file_content)
+        
+        stored_files.append(file_path)
+
     return stored_files
+import httpx
+
+async def pin_file_to_ipfs(file_path: str):
+    try:
+        url = "https://api.pinata.cloud/pinning/pinFileToIPFS"
+        headers = {
+            "pinata_api_key": "fb4aba376ddd6ac86d4c",
+            "pinata_secret_api_key": "20e8c81836e88f97bf9c185277c7c04e61716c37a8cadbe4e9f96c4fc74d9566",
+        }
+        with open(file_path, "rb") as f:
+            file_content = f.read()
+        filename = os.path.basename(file_path)
+        files = {"file": (filename, file_content)}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, files=files)
+            response.raise_for_status()
+            response_data = response.json()
+
+        return response_data.get("IpfsHash")
+    except Exception as e:
+        print("Error uploading file to Pinata:", e)
+        return None
+
 
 
 
@@ -114,7 +151,7 @@ async def submit_case(
     client: str = Form(...),
     case_type: str = Form(...),
     description: str = Form(...),
-    files: Optional[List[UploadFile]] = File([])
+    files: Optional[List[UploadFile]] = File(None)
 ):
     try:
         filed_date_parsed = datetime.strptime(filed_date, "%a, %d %b %Y %H:%M:%S %Z")
@@ -129,35 +166,50 @@ async def submit_case(
             "status": status,
             "user_id": user_id,
             "client": client,
-            "case_type":case_type,
-            "description":description,
-            "approved":False,
-            "rejected":{"status":False,"reason":""},
+            "case_type": case_type,
+            "description": description,
+            "approved": False,
+            "rejected": {"status": False, "reason": ""},
             "file_cids": []
         }
+        
+        # Insert into MongoDB
         case_result = case_collection.insert_one(case_data)
-        case_id = str(case_result.inserted_id) 
-        print(case_id)
+        case_id = str(case_result.inserted_id)
+        
+        # Update pending cases count for lawyer
         users_collection.update_one(
-            {'_id': ObjectId(user_id),"user_type":"lawyer"},
-            {'$inc': {'pending_cases': 1}}  
+            {'_id': ObjectId(user_id), "user_type": "lawyer"},
+            {'$inc': {'pending_cases': 1}}
         )
-        if files: 
+
+        cids = []  # List to store IPFS hashes
+        if files:
             stored_files = store_files_locally(user_id, case_id, files)
-            try:
-                cids = [await pin_file_to_ipfs(files["file"]) for files in stored_files]
-            except Exception as e:
-                print(e)
-            case_collection.update_one(
-                {"_id": case_result.inserted_id},
-                {"$set": {"file_cids": cids}}
-            )
-        user = users_collection.find_one({"_id":ObjectId(user_id)})
-        return {"message": "Case submitted successfully", "case_id": case_id, "user":{"user_id":user_id,"pending_cases":user['pending_cases']}}
-    except Exception as e:
-        print(e)
-        raise HTTPException(status_code=400, detail=f"Error submitting case: {str(e)}")
+
+            # Upload files to Pinata (IPFS)
+            for file in stored_files:
+                cid = await pin_file_to_ipfs(file)
+                if cid:
+                    cids.append(cid)
+
+        case_collection.update_one(
+            {"_id": case_result.inserted_id},
+            {"$set": {"file_cids": cids}}
+        )
+
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+
+        return {
+            "message": "Case submitted successfully",
+            "case_id": case_id,
+            "user": {"user_id": user_id, "pending_cases": user['pending_cases']}
+        }
     
+    except Exception as e:
+        print("Error:", e)
+        raise HTTPException(status_code=400, detail=f"Error submitting case: {str(e)}")
+
 
 @app.get("/get-cases/{user_id}")
 async def get_cases(user_id: str):
@@ -183,13 +235,13 @@ async def get_cases(user_id: str):
                         reg_c.append(c)
             return {"cases": reg_c}
 
-    # cases = list(case_collection.find({"user_id": user_id}))
-    # for c in cases:
-    #     c["_id"] = str(c["_id"])
-    #     c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
-    #     c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
+    cases = list(case_collection.find({"user_id": user_id}))
+    for c in cases:
+        c["_id"] = str(c["_id"])
+        c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+        c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
 
-    # return {"cases": cases}
+    return {"cases": cases}
 
 
 
@@ -221,45 +273,38 @@ async def case_details(case_id: str):
     
 @app.post('/case/{case_id}/send-to-registrar')
 async def send_to_registrar(case_id: str):
-    try:
-        case1 = case_collection.find_one({"_id": ObjectId(case_id)})
-        if not case1:
-            raise HTTPException(status_code=404, detail="Case not found")
-        lawyer = users_collection.find_one({"username": case1['associated_lawyers']})
-        if not lawyer:
-            raise HTTPException(status_code=404, detail="Lawyer not found")
-        users_collection.update_one(
-            {"_id": lawyer['_id']}, 
-            {"$inc": {"verified_cases": 1}}  
-        )
-        # Get the list of registrars
-        registrars = list(users_collection.find({"user_type": "registrar"}))
-        if not registrars:
-            raise HTTPException(status_code=404, detail="No registrars found")
-        # Assign to the registrar with the least cases
-        registrars.sort(key=lambda r: len(r.get("cases", [])))  
-        assigned_registrar = registrars[0]
-        registrar_id = assigned_registrar["_id"]
-        # Append the case_id to the registrar's cases list and update in MongoDB
-        users_collection.update_one(
-            {"_id": registrar_id}, 
-            {"$addToSet": {"cases": case_id}}  # Ensures uniqueness
-        )
-        # Assign the registrar to the case
-        case_collection.update_one(
-            {"_id": ObjectId(case_id)}, 
-            {"$set": {"assigned_registrar": str(registrar_id)}}
-        )
-        return {
-            "message": "Case assigned successfully",
-            "case_id": case_id,
-            "assigned_registrar": str(registrar_id),
-            "registrar_cases": assigned_registrar.get("cases", []) + [case_id]  # Updated cases list
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error assigning case: {str(e)}")
+    case1 = case_collection.find_one({"_id": ObjectId(case_id)})
+    print(case1['associated_lawyers'])
+    lawyer = users_collection.find_one({"username": case1['associated_lawyers']})
+    # print("Lawyer is "+lawyer)
+    if not lawyer:
+        raise HTTPException(status_code=404, detail="Lawyer not found")
+    users_collection.update_one(
+        {"_id": lawyer['_id']}, 
+        {"$inc": {"verified_cases": 1}}  
+    )
+    registrars = list(users_collection.find({"user_type": "registrar"}))
+    if not registrars:
+        raise HTTPException(status_code=404, detail="No registrars found")
+    registrars.sort(key=lambda r: len(r.get("cases", [])))  
+    assigned_registrar = registrars[0]
+    registrar_id = assigned_registrar["_id"]
+    users_collection.update_one(
+        {"_id": registrar_id}, 
+        {"$addToSet": {"cases": case_id}}  # Ensures uniqueness
+    )
+    case_collection.update_one(
+        {"_id": ObjectId(case_id)}, 
+        {"$set": {"assigned_registrar": str(registrar_id)}}
+    )
+    return {
+        "message": "Case assigned successfully",
+        "case_id": case_id,
+        "assigned_registrar": str(registrar_id),
+        "registrar_cases": assigned_registrar.get("cases", []) + [case_id]  # Updated cases list
+    }
 
-# @app.get('/reg/
+
     
 @app.get('/registrar/{user_id}')
 async def registrar_dashboard(user_id: str):
@@ -393,6 +438,52 @@ async def send_to_stamp_reporter(case_id: str):
 
 
 # Stamp Reporter
+
+class CaseStampVerifyRequest(BaseModel):
+    user_id: str
+
+
+@app.post('/case-stamp-verif/{case_id}')
+async def case_stamp_verif(case_id: str, request: CaseStampVerifyRequest):
+    try:
+        user_id = request.user_id
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user_cases = user.get("cases", [])
+        matching_case = next((c for c in user_cases if c == case_id), None)
+        
+        if not matching_case:
+            raise HTTPException(status_code=404, detail="Case not found in user's cases")
+            
+        case = case_collection.find_one({'_id': ObjectId(matching_case)})
+        
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+            
+        # Convert ObjectId to string and other BSON types to JSON-compatible types
+        case['_id'] = str(case['_id'])
+        if 'user_id' in case:
+            case['user_id'] = str(case['user_id'])
+        if 'assigned_registrar' in case:
+            case['assigned_registrar'] = str(case['assigned_registrar'])
+        if 'assigned_stamp_reporter' in case:
+            case['assigned_stamp_reporter'] = str(case['assigned_stamp_reporter'])
+            
+        # Handle file_cids if it exists
+        if 'file_cids' in case and isinstance(case['file_cids'], list):
+            for file in case['file_cids']:
+                if isinstance(file, dict) and '_id' in file:
+                    file['_id'] = str(file['_id'])
+                    
+        return {"message": "Case found", "case": jsonable_encoder(case)}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching case: {str(e)}")
+
+
 @app.post("/case/{case_id}/accept")
 async def accept_case(case_id: str, request: Request):
     try:

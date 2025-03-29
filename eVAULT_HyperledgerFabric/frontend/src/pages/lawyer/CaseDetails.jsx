@@ -69,33 +69,35 @@ const CaseDetails = () => {
     try {
       const token = localStorage.getItem('token');
       const userString = localStorage.getItem('user_data');
-      if (!token) {
-        alert('You must be logged in to perform this action.');
-        return;
+      
+      if (!token || !userString) {
+        throw new Error('Authentication required');
       }
-      // const user = JSON.parse(userString);
-
+  
+      const user = JSON.parse(userString);
+      const userId = user.user_id; // Get user ID from user data
+  
       const response = await axios.post(
         `http://localhost:8000/case/${id}/send-to-registrar`,
-        {},
+        { user_id: userId }, // Include user_id in the request body
         {
           headers: {
-            Authorization: `Bearer ${token}`,
-          },
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         }
       );
-
+  
       if (response.status === 200) {
         alert('Case successfully sent to the registrar.');
-        // Optionally, update the case data to reflect the new status
-        console.log(response.data);
+        // Update the case data to reflect the new status
         setCaseData(prev => ({ ...prev, status: 'Sent to Registrar' }));
       } else {
         throw new Error('Failed to send case to registrar');
       }
     } catch (err) {
       console.error('Error sending case to registrar:', err);
-      alert('Failed to send case to registrar. Please try again.');
+      alert(err.response?.data?.message || 'Failed to send case to registrar. Please try again.');
     } finally {
       handleCloseDialog();
     }
@@ -290,7 +292,7 @@ const CaseDetails = () => {
                   <Button
                     variant="outlined"
                     size="small"
-                    onClick={() => window.open(`https://ipfs.io/ipfs/${doc.cid}`, '_blank')}
+                    onClick={() => window.open(`https://lime-occasional-xerinae-665.mypinata.cloud/ipfs/${doc.cid}`, '_blank')}
                   >
                     View
                   </Button>
