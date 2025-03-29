@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Paper,
@@ -14,65 +14,87 @@ import {
   Chip,
   ToggleButton,
   ToggleButtonGroup,
-} from '@mui/material';
-import {
-  Search as SearchIcon,
-} from '@mui/icons-material';
+  CircularProgress,
+} from "@mui/material";
+import { Search as SearchIcon } from "@mui/icons-material";
 
-const CaseStatusTracking = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+const CaseStatusTracking = ({ userId }) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock data
-  const cases = [
-    {
-      id: 'CASE-2024-001',
-      title: 'Property Documentation',
-      status: 'Accepted',
-      judgeName: 'Hon. Justice Williams',
-      decisionDate: '2024-12-15',
-      lawyer: 'Robert Brown',
-    },
-    {
-      id: 'CASE-2024-002',
-      title: 'Will Registration',
-      status: 'Rejected',
-      judgeName: 'Hon. Justice Rodriguez',
-      decisionDate: '2024-12-10',
-      lawyer: 'Sarah Wilson',
-    },
-    {
-      id: 'CASE-2024-003',
-      title: 'Land Deed Transfer',
-      status: 'Pending Hearing',
-      judgeName: 'Hon. Justice Martinez',
-      decisionDate: '2024-11-28',
-      lawyer: 'Michael Clark',
-    },
-  ];
+  // Fetch cases from API
+  useEffect(() => {
+    const fetchCases = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const token = localStorage.getItem("token");
+        if (!token) {
+          setError("You must be logged in to view cases.");
+          setLoading(false);
+          return;
+        }
+
+        const userString = localStorage.getItem("user_data");
+        const user = userString ? JSON.parse(userString) : null;
+        const userIdToUse = userId || user?.user_id;
+
+        if (!userIdToUse) {
+          setError("User ID is missing.");
+          setLoading(false);
+          return;
+        }
+
+        const response = await fetch(`http://localhost:8000/get-cases/${userIdToUse}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to fetch cases");
+        }
+
+        const data = await response.json();
+        console.log("Fetched cases:", data); // Debugging log
+
+        setCases(Array.isArray(data) ? data : data.cases || []);
+      } catch (err) {
+        console.error("Error fetching cases:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCases();
+  }, [userId]);
 
   const getStatusColor = (status) => {
-    switch (status.toLowerCase()) {
-      case 'accepted':
-        return 'success';
-      case 'rejected':
-        return 'error';
-      case 'pending hearing':
-        return 'warning';
+    switch (status?.toLowerCase()) {
+      case "verified":
+        return "success";
+      case "rejected":
+        return "error";
+      case "pending":
+        return "warning";
       default:
-        return 'default';
+        return "default";
     }
   };
 
-  const filteredCases = cases.filter((case_) => {
-    const matchesSearch = 
-      case_.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.lawyer.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = 
-      statusFilter === 'all' || 
-      case_.status.toLowerCase() === statusFilter.toLowerCase();
+  // Filter cases
+  const filteredCases = cases.filter((c) => {
+    const matchesSearch =
+      c.case_subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.associated_lawyers.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesStatus = statusFilter === "all" || c.status?.toLowerCase() === statusFilter.toLowerCase();
 
     return matchesSearch && matchesStatus;
   });
@@ -83,6 +105,7 @@ const CaseStatusTracking = () => {
         Case Status Tracking
       </Typography>
 
+      {/* Search & Filter */}
       <Box sx={{ mb: 3 }}>
         <TextField
           fullWidth
@@ -103,57 +126,58 @@ const CaseStatusTracking = () => {
         <ToggleButtonGroup
           value={statusFilter}
           exclusive
-          onChange={(e, newValue) => setStatusFilter(newValue || 'all')}
+          onChange={(e, newValue) => setStatusFilter(newValue || "all")}
           aria-label="status filter"
           sx={{ mb: 2 }}
         >
-          <ToggleButton value="all" aria-label="all cases">
-            All
-          </ToggleButton>
-          <ToggleButton value="accepted" aria-label="accepted cases">
-            Accepted
-          </ToggleButton>
-          <ToggleButton value="rejected" aria-label="rejected cases">
-            Rejected
-          </ToggleButton>
-          <ToggleButton value="pending hearing" aria-label="pending cases">
-            Pending Hearing
-          </ToggleButton>
+          <ToggleButton value="all">All</ToggleButton>
+          <ToggleButton value="verified">Verified</ToggleButton>
+          <ToggleButton value="rejected">Rejected</ToggleButton>
+          <ToggleButton value="pending">Pending</ToggleButton>
         </ToggleButtonGroup>
       </Box>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow sx={{ background: 'linear-gradient(120deg, #4a90e2 0%, #8e44ad 100%)' }}>
-              <TableCell sx={{ color: 'white' }}>Case ID</TableCell>
-              <TableCell sx={{ color: 'white' }}>Title</TableCell>
-              <TableCell sx={{ color: 'white' }}>Status</TableCell>
-              <TableCell sx={{ color: 'white' }}>Judge</TableCell>
-              <TableCell sx={{ color: 'white' }}>Decision Date</TableCell>
-              <TableCell sx={{ color: 'white' }}>Lawyer</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredCases.map((case_) => (
-              <TableRow key={case_.id}>
-                <TableCell>{case_.id}</TableCell>
-                <TableCell>{case_.title}</TableCell>
-                <TableCell>
-                  <Chip 
-                    label={case_.status}
-                    color={getStatusColor(case_.status)}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>{case_.judgeName}</TableCell>
-                <TableCell>{case_.decisionDate}</TableCell>
-                <TableCell>{case_.lawyer}</TableCell>
+      {/* Handle Loading & Errors */}
+      {loading ? (
+        <CircularProgress />
+      ) : error ? (
+        <Typography color="error">{error}</Typography>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ background: "linear-gradient(120deg, #4a90e2 0%, #8e44ad 100%)" }}>
+                <TableCell sx={{ color: "white" }}>Case Subject</TableCell>
+                <TableCell sx={{ color: "white" }}>Client</TableCell>
+                <TableCell sx={{ color: "white" }}>Status</TableCell>
+                <TableCell sx={{ color: "white" }}>Judge</TableCell>
+                <TableCell sx={{ color: "white" }}>Filed Date</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {filteredCases.length > 0 ? (
+                filteredCases.map((c) => (
+                  <TableRow key={c._id}>
+                    <TableCell>{c.case_subject}</TableCell>
+                    <TableCell>{c.client}</TableCell>
+                    <TableCell>
+                      <Chip label={c.status} color={getStatusColor(c.status)} size="small" />
+                    </TableCell>
+                    <TableCell>{c.associated_judge}</TableCell>
+                    <TableCell>{c.filed_date}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} align="center">
+                    No cases found
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
     </Box>
   );
 };

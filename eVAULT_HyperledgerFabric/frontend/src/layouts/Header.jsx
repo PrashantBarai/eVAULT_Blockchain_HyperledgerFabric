@@ -50,7 +50,8 @@ const Header = () => {
   const { name } = getUserInfo();
 
   const handleLogout = () => {
-    // Will implement logout logic later
+    localStorage.clear();
+    sessionStorage.clear(); 
     navigate('/');
   };
 

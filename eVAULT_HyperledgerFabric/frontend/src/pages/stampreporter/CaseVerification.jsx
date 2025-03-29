@@ -67,29 +67,34 @@ const CaseVerification = () => {
 
   const handleApprove = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const response = await fetch(`http://localhost:8000/case/${id}/accept`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ digital_signature: digitalSignature }),
+        body: JSON.stringify({ digital_signature: digitalSignature }), // Use the state value
       });
-
-      if (!response.ok) throw new Error('Failed to accept case.');
-
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("API Error:", errorData);
+        throw new Error(errorData.detail || "Failed to accept case.");
+      }
+  
       const data = await response.json();
-      console.log('Case accepted:', data);
+      console.log("Case accepted:", data);
       setOpenSignDialog(false);
       setShowSuccess(true);
       setTimeout(() => {
         navigate('/stampreporter/dashboard');
       }, 2000);
     } catch (err) {
-      console.error('Error accepting case:', err);
+      console.error("Error accepting case:", err);
     }
-  };
+  };  
+  
 
   const handleReject = async () => {
     try {
@@ -98,7 +103,7 @@ const CaseVerification = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ reason: rejectReason }),
       });

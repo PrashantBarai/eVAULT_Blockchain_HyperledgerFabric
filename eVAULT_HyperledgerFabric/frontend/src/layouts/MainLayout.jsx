@@ -41,7 +41,7 @@ const MainLayout = () => {
               <Typography variant="subtitle1">{userTitle} {userName}</Typography>
               <IconButton 
                 color="inherit" 
-                onClick={() => navigate(isRegistrarSection ? '/registrar/login' : '/')}
+                onClick={() => {localStorage.clear();navigate(isRegistrarSection ? '/registrar/login' : '/')}}
               >
                 <LogoutIcon />
               </IconButton>

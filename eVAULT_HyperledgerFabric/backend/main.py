@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from backend.models import *
 from backend.utils import *
 from backend.config import *
-from backend.database import users_collection,case_collection, lawyer_notification
+from backend.database import users_collection,case_collection, lawyer_notification, benchclerk_notification
 from typing import List, Optional
 from bson import ObjectId
 import os
@@ -17,7 +17,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:7000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -53,6 +53,14 @@ async def signup(user: UserCreate):
         user_data["rejected_cases"] = []
         user_data['digital_sign'] = str(uuid.uuid1())
         user_data['cases'] = []
+    elif user.user_type == "bench-clerk":
+        user_data["pending_cases"] = 0
+        user_data["verified_case_number"] = 0
+        user_data["rejected_case_number"] = 0
+        user_data["verified_cases"] = []
+        user_data["rejected_cases"] = []
+        user_data['cases'] = []
+        user_data['notifications'] = []
     result = users_collection.insert_one(user_data)
     
     if result.inserted_id:return {"message": "User created successfully", "user_id": str(result.inserted_id)}
@@ -151,36 +159,37 @@ async def submit_case(
         raise HTTPException(status_code=400, detail=f"Error submitting case: {str(e)}")
     
 
-
-
 @app.get("/get-cases/{user_id}")
 async def get_cases(user_id: str):
-    user = users_collection.find_one({'_id': ObjectId(user_id)})
+    print(f"Received user_id: {user_id}")  # Debug print
+
+    if ObjectId.is_valid(user_id): 
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+
+    if not user:
+        return {"error": "User not found"}
+
     reg_c = []
-    
-    print(f"User: {user}")
-    if user and (user['user_type'] == 'registrar' or user['user_type'] == 'stamp-reporter'):
-        
+    if user['user_type'] in ('registrar', 'stamp-reporter', 'bench-clerk'):
         if "cases" in user:
             for case_id in user["cases"]:
-                print(f"Case ID: {case_id}")
-                c = case_collection.find_one({'_id': ObjectId(case_id)})
-                print(f"Case: {c}")
-                if c: 
-                    c['_id'] = str(c['_id'])
-                    c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
-                    c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
-                    reg_c.append(c)
-                print(f"Registrar Cases: {reg_c}")
+                print(user['user_type'])
+                if ObjectId.is_valid(case_id):
+                    c = case_collection.find_one({'_id': ObjectId(case_id)})
+                    if c:
+                        c['_id'] = str(c['_id'])
+                        c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+                        c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
+                        reg_c.append(c)
             return {"cases": reg_c}
-    
-    cases = list(case_collection.find({"user_id": user_id}))
-    print(f"Cases for user {user_id}: {cases}")
-    for c in cases:
-        c["_id"] = str(c["_id"])
-        c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
-        c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
-    return {"cases": cases}
+
+    # cases = list(case_collection.find({"user_id": user_id}))
+    # for c in cases:
+    #     c["_id"] = str(c["_id"])
+    #     c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+    #     c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
+
+    # return {"cases": cases}
 
 
 
@@ -403,32 +412,46 @@ async def accept_case(case_id: str, request: Request):
         if digital_signature != stamp_reporter.get("digital_sign"):
             raise HTTPException(status_code=400, detail="Invalid digital signature")
         
-        # Update the case status to Verified
+        # Update case status
         case_collection.update_one(
             {"_id": ObjectId(case_id)},
             {"$set": {"status": "Verified", "approved": True}}
         )
         
-        # Add the case ID to the verified_cases list of the stamp reporter
+        # Add to stamp reporter's verified cases
         users_collection.update_one(
             {"_id": ObjectId(stamp_reporter["_id"])},
             {"$addToSet": {"verified_cases": case_id}}
         )
         
-        # Add a notification for the lawyer
+        # Find bench clerk and update
+        bench_clerk = users_collection.find_one({"user_type": "bench-clerk"}, sort=[("cases", 1)])
         notification_data = {
             "case_id": case_id,
             "message": f"Case '{case1['case_subject']}' (ID: {case_id}) has been verified by the stamp reporter.",
             "timestamp": datetime.now(),
             "lawyer_id": case1["user_id"]
         }
+        
+        if bench_clerk:
+            # Corrected update operation - combine both updates in one command
+            users_collection.update_one(
+                {"_id": bench_clerk["_id"]},
+                {
+                    "$addToSet": {
+                        "cases": case_id,
+                        "notifications": notification_data
+                    }
+                }
+            )
+        
         lawyer_notification.insert_one(notification_data)
-
         return {"message": "Case accepted and verified successfully", "case_id": case_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error accepting case: {str(e)}")
-
-
+    
+    
+    
 @app.get("/all-cases/{user_id}")
 async def get_all_cases(user_id: str):
     try:
@@ -448,3 +471,19 @@ async def get_all_cases(user_id: str):
     except Exception as e:
         print(f"Error fetching all cases: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+    
+@app.get('/benchclerk/notifs/{bench_id}')
+async def bench_notif(bench_id: str):
+    try:
+        user = users_collection.find_one({"_id":ObjectId(bench_id)})
+        formatted_notifications = []
+        for notification in user['notifications']:
+            formatted_notifications.append({
+                "case_id": notification.get("case_id", ""),
+                "message": notification.get("message", ""),
+                "timestamp": notification.get("timestamp", "").strftime('%Y-%m-%d %H:%M:%S')
+            })
+        return {"notifications": formatted_notifications}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching notifications: {str(e)}")
+    
