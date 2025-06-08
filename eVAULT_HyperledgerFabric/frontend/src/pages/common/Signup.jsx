@@ -149,7 +149,7 @@ const Signup = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (validateStep(activeStep)) {
+    if (validateStep(activeStep) && activeStep === steps.length - 1) {
       // In a real application, this would send the data to the server
       console.log('Form submitted:', formData);
       console.log('Documents:', documents);
@@ -157,12 +157,13 @@ const Signup = () => {
       // Show success message
       setSuccessMessage(`Registration successful! Your ${role} account is pending approval.`);
       
-      // Only redirect after form is submitted
-      if (activeStep === steps.length - 1) {
-        setTimeout(() => {
-          navigate('/');
-        }, 3000);
-      }
+      // Only redirect after explicit form submission
+      setTimeout(() => {
+        navigate('/');
+      }, 3000);
+    } else {
+      // If not on the final step, treat as "Next" button
+      handleNext();
     }
   };
 

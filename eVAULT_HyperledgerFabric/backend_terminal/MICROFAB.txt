@@ -19,14 +19,28 @@
   ],
   "channels": [
     {
-      "name": "evault-channel",
-      "endorsing_organizations": [
-        "LawyersOrg",
-        "RegistrarsOrg",
-        "StampReportersOrg",
-        "BenchClerksOrg",
-        "JudgesOrg"
-      ]
+      "name": "lawyer-registrar-channel",
+      "endorsing_organizations": ["LawyersOrg", "RegistrarsOrg"]
+    },
+    {
+      "name": "registrar-stampreporter-channel",
+      "endorsing_organizations": ["RegistrarsOrg", "StampReportersOrg"]
+    },
+    {
+      "name": "stampreporter-lawyer-channel",
+      "endorsing_organizations": ["StampReportersOrg", "LawyersOrg"]
+    },
+    {
+      "name": "stampreporter-benchclerk-channel",
+      "endorsing_organizations": ["StampReportersOrg", "BenchClerksOrg"]
+    },
+    {
+      "name": "benchclerk-judge-channel",
+      "endorsing_organizations": ["BenchClerksOrg", "JudgesOrg"]
+    },
+    {
+      "name": "benchclerk-lawyer-channel",
+      "endorsing_organizations": ["BenchClerksOrg", "LawyersOrg"]
     }
   ]
 }

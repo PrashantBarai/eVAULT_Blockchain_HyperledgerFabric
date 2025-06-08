@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Grid,
@@ -14,6 +13,7 @@ import {
   Pending as PendingIcon,
   Notifications as NotificationsIcon,
 } from '@mui/icons-material';
+import PropTypes from 'prop-types';
 
 const StatCard = ({ title, value, icon, color }) => (
   <Card
@@ -36,6 +36,17 @@ const StatCard = ({ title, value, icon, color }) => (
     </CardContent>
   </Card>
 );
+
+// Add PropTypes validation
+StatCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.number
+  ]).isRequired,
+  icon: PropTypes.element,
+  color: PropTypes.string.isRequired,
+};
 
 const Dashboard = () => {
   // Mock data
