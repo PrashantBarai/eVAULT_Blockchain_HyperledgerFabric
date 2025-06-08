@@ -93,19 +93,38 @@ func (s *JudgeContract) InitLedger(ctx contractapi.TransactionContextInterface) 
 
 // RecordJudgment records the final judgment for a case
 func (s *JudgeContract) RecordJudgment(ctx contractapi.TransactionContextInterface, caseID string, judgmentDetails string) error {
+	log.Printf("RecordJudgment called for case ID: %s", caseID)
+
 	// Get the case
 	caseJSON, err := ctx.GetStub().GetState(caseID)
 	if err != nil {
+		log.Printf("Failed to read case: %v", err)
 		return fmt.Errorf("failed to read case: %v", err)
 	}
 	if caseJSON == nil {
+		log.Printf("Case does not exist: %s", caseID)
 		return fmt.Errorf("case does not exist: %s", caseID)
 	}
 
 	var caseObj Case
 	err = json.Unmarshal(caseJSON, &caseObj)
 	if err != nil {
+		log.Printf("Failed to unmarshal case data: %v", err)
 		return err
+	}
+
+	// Initialize empty arrays if they are null
+	if caseObj.Documents == nil {
+		caseObj.Documents = make([]Document, 0)
+	}
+	if caseObj.History == nil {
+		caseObj.History = make([]HistoryItem, 0)
+	}
+	if caseObj.AssociatedLawyers == nil {
+		caseObj.AssociatedLawyers = make([]string, 0)
+	}
+	if caseObj.Hearings == nil {
+		caseObj.Hearings = make([]Hearing, 0)
 	}
 
 	// Parse judgment details
@@ -116,12 +135,14 @@ func (s *JudgeContract) RecordJudgment(ctx contractapi.TransactionContextInterfa
 	}
 	err = json.Unmarshal([]byte(judgmentDetails), &details)
 	if err != nil {
+		log.Printf("Failed to unmarshal judgment details: %v", err)
 		return err
 	}
 
 	// Get current timestamp
 	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
 	if err != nil {
+		log.Printf("Failed to get transaction timestamp: %v", err)
 		return fmt.Errorf("failed to get transaction timestamp: %v", err)
 	}
 	timestamp := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
@@ -152,27 +173,48 @@ func (s *JudgeContract) RecordJudgment(ctx contractapi.TransactionContextInterfa
 	caseObj.LastModified = timestamp
 	caseJSON, err = json.Marshal(caseObj)
 	if err != nil {
+		log.Printf("Failed to marshal updated case: %v", err)
 		return err
 	}
 
+	log.Printf("Successfully recorded judgment for case ID: %s", caseID)
 	return ctx.GetStub().PutState(caseID, caseJSON)
 }
 
 // AddHearingNotes adds notes for a case hearing
 func (s *JudgeContract) AddHearingNotes(ctx contractapi.TransactionContextInterface, caseID string, hearingDetails string) error {
+	log.Printf("AddHearingNotes called for case ID: %s", caseID)
+
 	// Get the case
 	caseJSON, err := ctx.GetStub().GetState(caseID)
 	if err != nil {
+		log.Printf("Failed to read case: %v", err)
 		return fmt.Errorf("failed to read case: %v", err)
 	}
 	if caseJSON == nil {
+		log.Printf("Case does not exist: %s", caseID)
 		return fmt.Errorf("case does not exist: %s", caseID)
 	}
 
 	var caseObj Case
 	err = json.Unmarshal(caseJSON, &caseObj)
 	if err != nil {
+		log.Printf("Failed to unmarshal case data: %v", err)
 		return err
+	}
+
+	// Initialize empty arrays if they are null
+	if caseObj.Documents == nil {
+		caseObj.Documents = make([]Document, 0)
+	}
+	if caseObj.History == nil {
+		caseObj.History = make([]HistoryItem, 0)
+	}
+	if caseObj.AssociatedLawyers == nil {
+		caseObj.AssociatedLawyers = make([]string, 0)
+	}
+	if caseObj.Hearings == nil {
+		caseObj.Hearings = make([]Hearing, 0)
 	}
 
 	// Parse hearing details
@@ -182,12 +224,14 @@ func (s *JudgeContract) AddHearingNotes(ctx contractapi.TransactionContextInterf
 	}
 	err = json.Unmarshal([]byte(hearingDetails), &details)
 	if err != nil {
+		log.Printf("Failed to unmarshal hearing details: %v", err)
 		return err
 	}
 
 	// Get current timestamp
 	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
 	if err != nil {
+		log.Printf("Failed to get transaction timestamp: %v", err)
 		return fmt.Errorf("failed to get transaction timestamp: %v", err)
 	}
 	timestamp := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
@@ -204,6 +248,7 @@ func (s *JudgeContract) AddHearingNotes(ctx contractapi.TransactionContextInterf
 	}
 
 	if !hearingFound {
+		log.Printf("Hearing not found for date: %s", details.HearingDate)
 		return fmt.Errorf("hearing not found for date: %s", details.HearingDate)
 	}
 
@@ -219,10 +264,115 @@ func (s *JudgeContract) AddHearingNotes(ctx contractapi.TransactionContextInterf
 	caseObj.LastModified = timestamp
 	caseJSON, err = json.Marshal(caseObj)
 	if err != nil {
+		log.Printf("Failed to marshal updated case: %v", err)
 		return err
 	}
 
+	log.Printf("Successfully added hearing notes for case ID: %s", caseID)
 	return ctx.GetStub().PutState(caseID, caseJSON)
+}
+
+// GetCaseById retrieves a specific case by its ID
+func (s *JudgeContract) GetCaseById(ctx contractapi.TransactionContextInterface, caseID string) (*Case, error) {
+	log.Printf("GetCaseById called with ID: %s", caseID)
+
+	// Get the case
+	caseJSON, err := ctx.GetStub().GetState(caseID)
+	if err != nil {
+		log.Printf("Failed to read case: %v", err)
+		return nil, fmt.Errorf("failed to read case: %v", err)
+	}
+	if caseJSON == nil {
+		log.Printf("Case not found: %s", caseID)
+		return nil, fmt.Errorf("case not found: %s", caseID)
+	}
+
+	var caseObj Case
+	err = json.Unmarshal(caseJSON, &caseObj)
+	if err != nil {
+		log.Printf("Failed to unmarshal case: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal case: %v", err)
+	}
+
+	// Initialize empty arrays if they are null
+	if caseObj.Documents == nil {
+		caseObj.Documents = make([]Document, 0)
+	}
+	if caseObj.History == nil {
+		caseObj.History = make([]HistoryItem, 0)
+	}
+	if caseObj.AssociatedLawyers == nil {
+		caseObj.AssociatedLawyers = make([]string, 0)
+	}
+	if caseObj.Hearings == nil {
+		caseObj.Hearings = make([]Hearing, 0)
+	}
+
+	log.Printf("Successfully retrieved case with ID: %s", caseID)
+	return &caseObj, nil
+}
+
+// QueryStats gets statistics for judge dashboard
+func (s *JudgeContract) QueryStats(ctx contractapi.TransactionContextInterface) (string, error) {
+	log.Printf("QueryStats called")
+
+	stats := struct {
+		PendingCases      int `json:"pendingCases"`
+		CompletedCases    int `json:"completedCases"`
+		ScheduledHearings int `json:"scheduledHearings"`
+		JudgmentsIssued   int `json:"judgmentsIssued"`
+	}{}
+
+	// Count pending cases
+	pendingIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"PENDING_JUDGE_REVIEW","currentOrg":"JudgesOrg"}}`)
+	if err == nil {
+		for pendingIterator.HasNext() {
+			stats.PendingCases++
+			_, _ = pendingIterator.Next()
+		}
+		pendingIterator.Close()
+	}
+
+	// Count completed cases (judgments issued)
+	completedIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"JUDGMENT_ISSUED"}}`)
+	if err == nil {
+		for completedIterator.HasNext() {
+			stats.CompletedCases++
+			_, _ = completedIterator.Next()
+		}
+		completedIterator.Close()
+	}
+
+	// Count scheduled hearings
+	hearingQuery := fmt.Sprintf(`{"selector":{"hearings":{"$elemMatch":{"status":"SCHEDULED"}}}}`)
+	hearingIterator, err := ctx.GetStub().GetQueryResult(hearingQuery)
+	if err == nil {
+		for hearingIterator.HasNext() {
+			stats.ScheduledHearings++
+			_, _ = hearingIterator.Next()
+		}
+		hearingIterator.Close()
+	}
+
+	// Count judgments issued
+	judgmentIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"judgment":{"$ne":null}}}`)
+	if err == nil {
+		for judgmentIterator.HasNext() {
+			stats.JudgmentsIssued++
+			_, _ = judgmentIterator.Next()
+		}
+		judgmentIterator.Close()
+	}
+
+	// Convert stats to JSON
+	statsJSON, err := json.Marshal(stats)
+	if err != nil {
+		log.Printf("Failed to marshal stats: %v", err)
+		return "", fmt.Errorf("failed to marshal stats: %v", err)
+	}
+
+	log.Printf("Statistics: %s", string(statsJSON))
+	return string(statsJSON), nil
 }
 
 func main() {

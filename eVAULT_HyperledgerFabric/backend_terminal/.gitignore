@@ -46,9 +46,9 @@ coverage/
 !package-lock.json
 
 # Hyperledger Fabric-specific files
-wallets/
-msp/
-gateways/
+_wallets/
+_msp/
+_gateways/
 bin/
 builders/
 config/

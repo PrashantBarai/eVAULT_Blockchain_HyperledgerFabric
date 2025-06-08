@@ -32,6 +32,9 @@ type Case struct {
 	CreatedBy         string        `json:"createdBy"`
 	CreatedAt         string        `json:"createdAt"`
 	LastModified      string        `json:"lastModified"`
+	Hearings          []Hearing     `json:"hearings"`
+	Judgment          *Judgment     `json:"judgment,omitempty"`
+	Decision          string        `json:"decision"` // For backward compatibility
 }
 
 // Document represents a case document
@@ -58,6 +61,25 @@ type HistoryItem struct {
 	Organization string `json:"organization"`
 	Timestamp    string `json:"timestamp"`
 	Comments     string `json:"comments"`
+}
+
+// Hearing represents a court hearing
+type Hearing struct {
+	Date     string `json:"date"`
+	Time     string `json:"time"`
+	Location string `json:"location"`
+	Status   string `json:"status"`
+	Notes    string `json:"notes"`
+}
+
+// Judgment represents a judge's final decision on a case
+type Judgment struct {
+	Decision  string `json:"decision"`
+	Reasoning string `json:"reasoning"`
+	Date      string `json:"date"`
+	JudgeID   string `json:"judgeId"`
+	IssuedAt  string `json:"issuedAt"`
+	Status    string `json:"status"`
 }
 
 // LawyerContract provides functions for managing cases
@@ -216,6 +238,9 @@ func (s *LawyerContract) GetCase(ctx contractapi.TransactionContextInterface, ca
 	if case_.AssociatedLawyers == nil {
 		case_.AssociatedLawyers = make([]string, 0)
 	}
+	if case_.Hearings == nil {
+		case_.Hearings = make([]Hearing, 0)
+	}
 
 	return &case_, nil
 }
@@ -344,42 +369,200 @@ func (s *LawyerContract) AddDocumentToCase(ctx contractapi.TransactionContextInt
 	return ctx.GetStub().PutState(caseID, caseJSON)
 }
 
-// // TestCrossChaincodeInvocation is a test function to verify chaincode-to-chaincode invocation
-// func (s *LawyerContract) TestCrossChaincodeInvocation(ctx contractapi.TransactionContextInterface) error {
-// 	// Create a simple test object
-// 	testData := map[string]string{
-// 		"id":    "TEST_CASE_" + time.Now().Format("20060102150405"),
-// 		"title": "Test Invocation",
-// 		"type":  "TEST",
-// 	}
+// GetConfirmedDecisions retrieves cases with confirmed judge decisions
+func (s *LawyerContract) GetConfirmedDecisions(ctx contractapi.TransactionContextInterface) ([]*Case, error) {
+	log.Printf("GetConfirmedDecisions called")
 
-// 	// Marshal to JSON string
-// 	testJSON, err := json.Marshal(testData)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to marshal test data: %v", err)
-// 	}
+	queryString := `{
+        "selector": {
+            "status": "DECISION_CONFIRMED",
+            "currentOrg": "LawyersOrg"
+        }
+    }`
 
-// 	// Convert to string
-// 	testJSONStr := string(testJSON)
+	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
+	if err != nil {
+		log.Printf("Query failed: %v", err)
+		return nil, err
+	}
+	defer resultsIterator.Close()
+	var cases []*Case
+	for resultsIterator.HasNext() {
+		queryResponse, err := resultsIterator.Next()
+		if err != nil {
+			log.Printf("Error reading next result: %v", err)
+			return nil, err
+		}
 
-// 	// Create arguments array
-// 	args := [][]byte{[]byte("TestJSONParsing"), []byte(testJSONStr)}
+		var case_ Case
+		err = json.Unmarshal(queryResponse.Value, &case_)
+		if err != nil {
+			log.Printf("Failed to unmarshal case: %v", err)
+			return nil, err
+		}
 
-// 	// Log the test invocation
-// 	log.Printf("Testing cross-chaincode invocation with data: %s", testJSONStr)
+		// Initialize empty arrays if they are null
+		if case_.Documents == nil {
+			case_.Documents = make([]Document, 0)
+		}
+		if case_.History == nil {
+			case_.History = make([]HistoryItem, 0)
+		}
+		if case_.AssociatedLawyers == nil {
+			case_.AssociatedLawyers = make([]string, 0)
+		}
+		if case_.Hearings == nil {
+			case_.Hearings = make([]Hearing, 0)
+		}
 
-// 	// Invoke the TestJSONParsing function in the registrar chaincode
-// 	response := ctx.GetStub().InvokeChaincode("registrar", args, "")
+		cases = append(cases, &case_)
+	}
 
-// 	// Check and log the response
-// 	if response.Status != shim.OK {
-// 		log.Printf("Cross-chaincode test failed: %s", response.Message)
-// 		return fmt.Errorf("cross-chaincode test failed: %s", response.Message)
-// 	}
+	log.Printf("Found %d cases with confirmed decisions", len(cases))
+	return cases, nil
+}
 
-// 	log.Printf("Cross-chaincode test succeeded: %s", string(response.Payload))
-// 	return nil
-// }
+// QueryStats gets statistics for lawyer dashboard
+func (s *LawyerContract) QueryStats(ctx contractapi.TransactionContextInterface) (string, error) {
+	log.Printf("QueryStats called")
+
+	stats := struct {
+		TotalCases        int `json:"totalCases"`
+		PendingCases      int `json:"pendingCases"`
+		InProgressCases   int `json:"inProgressCases"`
+		CompletedCases    int `json:"completedCases"`
+		DecisionConfirmed int `json:"decisionConfirmed"`
+	}{}
+
+	// Total cases count
+	totalIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"associatedLawyers":{"$exists":true}}}`)
+	if err == nil {
+		for totalIterator.HasNext() {
+			stats.TotalCases++
+			_, _ = totalIterator.Next()
+		}
+		totalIterator.Close()
+	}
+
+	// Count pending registrar cases
+	pendingIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"PENDING_REGISTRAR_REVIEW"}}`)
+	if err == nil {
+		for pendingIterator.HasNext() {
+			stats.PendingCases++
+			_, _ = pendingIterator.Next()
+		}
+		pendingIterator.Close()
+	}
+
+	// Count in progress cases
+	progressIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"$or":[{"status":"VERIFIED_BY_REGISTRAR"},{"status":"VALIDATED_BY_STAMP_REPORTER"},{"status":"PENDING_JUDGE_REVIEW"}]}}`)
+	if err == nil {
+		for progressIterator.HasNext() {
+			stats.InProgressCases++
+			_, _ = progressIterator.Next()
+		}
+		progressIterator.Close()
+	}
+
+	// Count confirmed decisions
+	decisionIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"DECISION_CONFIRMED","currentOrg":"LawyersOrg"}}`)
+	if err == nil {
+		for decisionIterator.HasNext() {
+			stats.DecisionConfirmed++
+			_, _ = decisionIterator.Next()
+		}
+		decisionIterator.Close()
+	}
+
+	// Count completed cases
+	completedIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":{"$in":["DECISION_CONFIRMED", "JUDGMENT_ISSUED"]}}}`)
+	if err == nil {
+		for completedIterator.HasNext() {
+			stats.CompletedCases++
+			_, _ = completedIterator.Next()
+		}
+		completedIterator.Close()
+	}
+
+	// Convert stats to JSON
+	statsJSON, err := json.Marshal(stats)
+	if err != nil {
+		log.Printf("Failed to marshal stats: %v", err)
+		return "", fmt.Errorf("failed to marshal stats: %v", err)
+	}
+
+	log.Printf("Statistics: %s", string(statsJSON))
+	return string(statsJSON), nil
+}
+
+// ViewJudgmentDetails retrieves detailed information about a case judgment
+func (s *LawyerContract) ViewJudgmentDetails(ctx contractapi.TransactionContextInterface, caseID string) (string, error) {
+	log.Printf("ViewJudgmentDetails called for case ID: %s", caseID)
+
+	// Get the case
+	case_, err := s.GetCase(ctx, caseID)
+	if err != nil {
+		log.Printf("Failed to get case: %v", err)
+		return "", err
+	}
+
+	// Check if the case has a confirmed decision
+	if case_.Status != "DECISION_CONFIRMED" {
+		log.Printf("Case %s does not have a confirmed decision", caseID)
+		return "", fmt.Errorf("case %s does not have a confirmed decision", caseID)
+	}
+
+	// Extract judgment-related information from the case history
+	var judgmentInfo struct {
+		CaseID        string   `json:"caseId"`
+		CaseNumber    string   `json:"caseNumber"`
+		Title         string   `json:"title"`
+		Decision      string   `json:"decision"`
+		JudgeID       string   `json:"judgeId"`
+		IssuedAt      string   `json:"issuedAt"`
+		ConfirmedAt   string   `json:"confirmedAt"`
+		CurrentStatus string   `json:"currentStatus"`
+		History       []string `json:"history"`
+	}
+
+	judgmentInfo.CaseID = case_.ID
+	judgmentInfo.CaseNumber = case_.CaseNumber
+	judgmentInfo.Title = case_.Title // Get decision from Judgment field if available, otherwise use legacy Decision field
+	if case_.Judgment != nil {
+		judgmentInfo.Decision = case_.Judgment.Decision
+		judgmentInfo.JudgeID = case_.Judgment.JudgeID
+		judgmentInfo.IssuedAt = case_.Judgment.IssuedAt
+	} else {
+		judgmentInfo.Decision = case_.Decision
+		judgmentInfo.JudgeID = case_.AssociatedJudge
+	}
+	judgmentInfo.CurrentStatus = case_.Status
+
+	// Extract relevant history items
+	judgmentInfo.History = make([]string, 0)
+	for _, item := range case_.History {
+		if item.Status == "JUDGMENT_ISSUED" || item.Status == "DECISION_CONFIRMED" {
+			if item.Status == "JUDGMENT_ISSUED" {
+				judgmentInfo.IssuedAt = item.Timestamp
+			}
+			if item.Status == "DECISION_CONFIRMED" {
+				judgmentInfo.ConfirmedAt = item.Timestamp
+			}
+			judgmentInfo.History = append(judgmentInfo.History,
+				fmt.Sprintf("%s: %s - %s", item.Timestamp, item.Status, item.Comments))
+		}
+	}
+
+	// Convert to JSON
+	judgmentJSON, err := json.Marshal(judgmentInfo)
+	if err != nil {
+		log.Printf("Failed to marshal judgment info: %v", err)
+		return "", fmt.Errorf("failed to marshal judgment info: %v", err)
+	}
+
+	log.Printf("Successfully retrieved judgment details for case ID: %s", caseID)
+	return string(judgmentJSON), nil
+}
 
 func main() {
 	lawyerChaincode, err := contractapi.NewChaincode(&LawyerContract{})

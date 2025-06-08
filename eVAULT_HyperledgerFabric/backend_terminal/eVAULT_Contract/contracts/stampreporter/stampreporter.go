@@ -79,19 +79,35 @@ func (s *StampReporterContract) InitLedger(ctx contractapi.TransactionContextInt
 
 // ValidateDocuments validates case documents and provides digital signature
 func (s *StampReporterContract) ValidateDocuments(ctx contractapi.TransactionContextInterface, caseID string, validationDetails string) error {
+	log.Printf("ValidateDocuments called for case ID: %s", caseID)
+
 	// Get the case
 	caseJSON, err := ctx.GetStub().GetState(caseID)
 	if err != nil {
+		log.Printf("Failed to read case: %v", err)
 		return fmt.Errorf("failed to read case: %v", err)
 	}
 	if caseJSON == nil {
+		log.Printf("Case does not exist: %s", caseID)
 		return fmt.Errorf("case does not exist: %s", caseID)
 	}
 
 	var caseObj Case
 	err = json.Unmarshal(caseJSON, &caseObj)
 	if err != nil {
+		log.Printf("Failed to unmarshal case data: %v", err)
 		return err
+	}
+
+	// Initialize empty arrays if they are null
+	if caseObj.Documents == nil {
+		caseObj.Documents = make([]Document, 0)
+	}
+	if caseObj.History == nil {
+		caseObj.History = make([]HistoryItem, 0)
+	}
+	if caseObj.AssociatedLawyers == nil {
+		caseObj.AssociatedLawyers = make([]string, 0)
 	}
 
 	// Parse validation details
@@ -177,6 +193,8 @@ func (s *StampReporterContract) ValidateDocuments(ctx contractapi.TransactionCon
 
 // GetPendingCases retrieves cases pending stamp reporter validation
 func (s *StampReporterContract) GetPendingCases(ctx contractapi.TransactionContextInterface) ([]*Case, error) {
+	log.Printf("GetPendingCases called")
+
 	queryString := `{
         "selector": {
             "status": "PENDING_STAMP_REPORTER_REVIEW",
@@ -184,8 +202,10 @@ func (s *StampReporterContract) GetPendingCases(ctx contractapi.TransactionConte
         }
     }`
 
+	log.Printf("Executing query: %s", queryString)
 	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
 	if err != nil {
+		log.Printf("Query failed: %v", err)
 		return nil, err
 	}
 	defer resultsIterator.Close()
@@ -194,19 +214,119 @@ func (s *StampReporterContract) GetPendingCases(ctx contractapi.TransactionConte
 	for resultsIterator.HasNext() {
 		queryResponse, err := resultsIterator.Next()
 		if err != nil {
+			log.Printf("Error reading next result: %v", err)
 			return nil, err
 		}
 
 		var caseObj Case
 		err = json.Unmarshal(queryResponse.Value, &caseObj)
 		if err != nil {
+			log.Printf("Failed to unmarshal case: %v", err)
 			return nil, err
+		}
+
+		// Initialize empty arrays if they are null
+		if caseObj.Documents == nil {
+			caseObj.Documents = make([]Document, 0)
+		}
+		if caseObj.History == nil {
+			caseObj.History = make([]HistoryItem, 0)
+		}
+		if caseObj.AssociatedLawyers == nil {
+			caseObj.AssociatedLawyers = make([]string, 0)
 		}
 
 		cases = append(cases, &caseObj)
 	}
-
 	return cases, nil
+}
+
+// GetCaseById retrieves a specific case by its ID
+func (s *StampReporterContract) GetCaseById(ctx contractapi.TransactionContextInterface, caseID string) (*Case, error) {
+	log.Printf("GetCaseById called with ID: %s", caseID)
+
+	// Get the case
+	caseJSON, err := ctx.GetStub().GetState(caseID)
+	if err != nil {
+		log.Printf("Failed to read case: %v", err)
+		return nil, fmt.Errorf("failed to read case: %v", err)
+	}
+	if caseJSON == nil {
+		log.Printf("Case not found: %s", caseID)
+		return nil, fmt.Errorf("case not found: %s", caseID)
+	}
+
+	var caseObj Case
+	err = json.Unmarshal(caseJSON, &caseObj)
+	if err != nil {
+		log.Printf("Failed to unmarshal case: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal case: %v", err)
+	}
+
+	// Initialize empty arrays if they are null
+	if caseObj.Documents == nil {
+		caseObj.Documents = make([]Document, 0)
+	}
+	if caseObj.History == nil {
+		caseObj.History = make([]HistoryItem, 0)
+	}
+	if caseObj.AssociatedLawyers == nil {
+		caseObj.AssociatedLawyers = make([]string, 0)
+	}
+
+	log.Printf("Successfully retrieved case with ID: %s", caseID)
+	return &caseObj, nil
+}
+
+// QueryStats gets statistics for stamp reporter dashboard
+func (s *StampReporterContract) QueryStats(ctx contractapi.TransactionContextInterface) (string, error) {
+	log.Printf("QueryStats called")
+
+	stats := struct {
+		PendingCases   int `json:"pendingCases"`
+		ValidatedCases int `json:"validatedCases"`
+		RejectedCases  int `json:"rejectedCases"`
+	}{}
+
+	// Count pending cases
+	pendingIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"PENDING_STAMP_REPORTER_REVIEW","currentOrg":"StampReportersOrg"}}`)
+	if err == nil {
+		for pendingIterator.HasNext() {
+			stats.PendingCases++
+			_, _ = pendingIterator.Next()
+		}
+		pendingIterator.Close()
+	}
+
+	// Count validated cases
+	validatedIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"VALIDATED_BY_STAMP_REPORTER","currentOrg":"BenchClerksOrg"}}`)
+	if err == nil {
+		for validatedIterator.HasNext() {
+			stats.ValidatedCases++
+			_, _ = validatedIterator.Next()
+		}
+		validatedIterator.Close()
+	}
+
+	// Count rejected cases
+	rejectedIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"REJECTED_BY_STAMP_REPORTER","currentOrg":"LawyersOrg"}}`)
+	if err == nil {
+		for rejectedIterator.HasNext() {
+			stats.RejectedCases++
+			_, _ = rejectedIterator.Next()
+		}
+		rejectedIterator.Close()
+	}
+
+	// Convert stats to JSON
+	statsJSON, err := json.Marshal(stats)
+	if err != nil {
+		log.Printf("Failed to marshal stats: %v", err)
+		return "", fmt.Errorf("failed to marshal stats: %v", err)
+	}
+
+	log.Printf("Statistics: %s", string(statsJSON))
+	return string(statsJSON), nil
 }
 
 func main() {
