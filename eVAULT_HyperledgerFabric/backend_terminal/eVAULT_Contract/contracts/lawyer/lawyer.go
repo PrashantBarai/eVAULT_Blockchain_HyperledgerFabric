@@ -193,7 +193,7 @@ func (s *LawyerContract) SubmitToRegistrar(ctx contractapi.TransactionContextInt
 	channelName := ""
 	log.Printf("Invoking registrar chaincode on channel: %s", channelName)
 
-	response := ctx.GetStub().InvokeChaincode("registrar", args, channelName)
+	response := ctx.GetStub().InvokeChaincode("registrar", args, channelName) // Invoke the registrar chaincode
 	if response.Status != shim.OK {
 		// If registrar submission fails, revert the status
 		caseObj.Status = "CREATED"
@@ -228,19 +228,8 @@ func (s *LawyerContract) GetCase(ctx contractapi.TransactionContextInterface, ca
 		return nil, err
 	}
 
-	// Initialize empty arrays if they are null
-	if case_.Documents == nil {
-		case_.Documents = make([]Document, 0)
-	}
-	if case_.History == nil {
-		case_.History = make([]HistoryItem, 0)
-	}
-	if case_.AssociatedLawyers == nil {
-		case_.AssociatedLawyers = make([]string, 0)
-	}
-	if case_.Hearings == nil {
-		case_.Hearings = make([]Hearing, 0)
-	}
+	// Use our helper method to initialize the case structure
+	s.initializeCaseStructure(&case_)
 
 	return &case_, nil
 }
@@ -393,7 +382,6 @@ func (s *LawyerContract) GetConfirmedDecisions(ctx contractapi.TransactionContex
 			log.Printf("Error reading next result: %v", err)
 			return nil, err
 		}
-
 		var case_ Case
 		err = json.Unmarshal(queryResponse.Value, &case_)
 		if err != nil {
@@ -401,19 +389,8 @@ func (s *LawyerContract) GetConfirmedDecisions(ctx contractapi.TransactionContex
 			return nil, err
 		}
 
-		// Initialize empty arrays if they are null
-		if case_.Documents == nil {
-			case_.Documents = make([]Document, 0)
-		}
-		if case_.History == nil {
-			case_.History = make([]HistoryItem, 0)
-		}
-		if case_.AssociatedLawyers == nil {
-			case_.AssociatedLawyers = make([]string, 0)
-		}
-		if case_.Hearings == nil {
-			case_.Hearings = make([]Hearing, 0)
-		}
+		// Use our helper method to initialize the case structure
+		s.initializeCaseStructure(&case_)
 
 		cases = append(cases, &case_)
 	}
@@ -562,6 +539,198 @@ func (s *LawyerContract) ViewJudgmentDetails(ctx contractapi.TransactionContextI
 
 	log.Printf("Successfully retrieved judgment details for case ID: %s", caseID)
 	return string(judgmentJSON), nil
+}
+
+// GetAllCases retrieves all cases accessible to the lawyer
+func (s *LawyerContract) GetAllCases(ctx contractapi.TransactionContextInterface) ([]*Case, error) {
+	log.Printf("GetAllCases called")
+
+	// Query all cases
+	queryString := `{
+        "selector": {
+            "$or": [
+                {"currentOrg": "LawyersOrg"},
+                {"associatedLawyers": {"$exists": true}}
+            ]
+        }
+    }`
+
+	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
+	if err != nil {
+		log.Printf("Query failed: %v", err)
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	var cases []*Case
+	for resultsIterator.HasNext() {
+		queryResponse, err := resultsIterator.Next()
+		if err != nil {
+			log.Printf("Error reading next result: %v", err)
+			return nil, err
+		}
+
+		var case_ Case
+		err = json.Unmarshal(queryResponse.Value, &case_)
+		if err != nil {
+			log.Printf("Failed to unmarshal case: %v", err)
+			return nil, err
+		}
+
+		// Initialize empty arrays and handle legacy data structure
+		s.initializeCaseStructure(&case_)
+		cases = append(cases, &case_)
+	}
+
+	log.Printf("Found %d cases in total", len(cases))
+	return cases, nil
+}
+
+// GetCasesByLawyerID retrieves cases associated with a specific lawyer ID
+func (s *LawyerContract) GetCasesByLawyerID(ctx contractapi.TransactionContextInterface, lawyerID string) ([]*Case, error) {
+	log.Printf("GetCasesByLawyerID called for lawyer ID: %s", lawyerID)
+
+	// Create CouchDB query to find cases where the lawyer is associated
+	queryString := fmt.Sprintf(`{
+		"selector": {
+			"$or": [
+				{"associatedLawyers": {"$elemMatch": {"$eq": "%s"}}},
+				{"createdBy": "%s"}
+			]
+		}
+	}`, lawyerID, lawyerID)
+
+	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
+	if err != nil {
+		log.Printf("Query failed: %v", err)
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	var cases []*Case
+	for resultsIterator.HasNext() {
+		queryResponse, err := resultsIterator.Next()
+		if err != nil {
+			log.Printf("Error reading next result: %v", err)
+			return nil, err
+		}
+
+		var case_ Case
+		err = json.Unmarshal(queryResponse.Value, &case_)
+		if err != nil {
+			log.Printf("Failed to unmarshal case: %v", err)
+			return nil, err
+		}
+
+		// Initialize case structure
+		s.initializeCaseStructure(&case_)
+		cases = append(cases, &case_)
+	}
+
+	log.Printf("Found %d cases for lawyer ID: %s", len(cases), lawyerID)
+	return cases, nil
+}
+
+// initializeCaseStructure initializes case structure and handles legacy data
+func (s *LawyerContract) initializeCaseStructure(case_ *Case) {
+	// Initialize empty arrays if they are null
+	if case_.Documents == nil {
+		case_.Documents = make([]Document, 0)
+	}
+	if case_.History == nil {
+		case_.History = make([]HistoryItem, 0)
+	}
+	if case_.AssociatedLawyers == nil {
+		case_.AssociatedLawyers = make([]string, 0)
+	}
+	if case_.Hearings == nil {
+		case_.Hearings = make([]Hearing, 0)
+	}
+
+	// Initialize Judgment if nil to handle schema validation
+	// This is important to ensure lawyers can always access cases regardless of judgment status
+	if case_.Judgment == nil {
+		issuedAt := ""
+		decision := case_.Decision // Use legacy decision if available
+		judgmentStatus := ""
+
+		// Try to find judgment details from history
+		for _, item := range case_.History {
+			if item.Status == "JUDGMENT_ISSUED" {
+				issuedAt = item.Timestamp
+				judgmentStatus = "ISSUED"
+				break
+			}
+		}
+
+		// Create a default empty judgment object to satisfy schema requirements
+		// This ensures cases can be retrieved at any point in the workflow
+		case_.Judgment = &Judgment{
+			Decision:  decision,
+			JudgeID:   case_.AssociatedJudge,
+			IssuedAt:  issuedAt,
+			Status:    judgmentStatus,
+			Reasoning: "", // Initialize with empty string
+			Date:      issuedAt,
+		}
+	}
+}
+
+// TrackCaseStatus allows lawyers to track case status regardless of the workflow stage
+func (s *LawyerContract) TrackCaseStatus(ctx contractapi.TransactionContextInterface, caseID string) (string, error) {
+	log.Printf("TrackCaseStatus called for case ID: %s", caseID)
+
+	// Get the case
+	caseJSON, err := ctx.GetStub().GetState(caseID)
+	if err != nil {
+		log.Printf("Failed to read case: %v", err)
+		return "", fmt.Errorf("failed to read case: %v", err)
+	}
+	if caseJSON == nil {
+		log.Printf("Case not found: %s", caseID)
+		return "", fmt.Errorf("case not found: %s", caseID)
+	}
+
+	var case_ Case
+	err = json.Unmarshal(caseJSON, &case_)
+	if err != nil {
+		log.Printf("Failed to unmarshal case: %v", err)
+		return "", err
+	}
+
+	// Always initialize the case structure
+	s.initializeCaseStructure(&case_)
+
+	// Create a response object with essential tracking information
+	trackingInfo := struct {
+		ID           string        `json:"id"`
+		CaseNumber   string        `json:"caseNumber"`
+		Title        string        `json:"title"`
+		Status       string        `json:"status"`
+		CurrentOrg   string        `json:"currentOrg"`
+		FiledDate    string        `json:"filedDate"`
+		LastModified string        `json:"lastModified"`
+		History      []HistoryItem `json:"history"`
+	}{
+		ID:           case_.ID,
+		CaseNumber:   case_.CaseNumber,
+		Title:        case_.Title,
+		Status:       case_.Status,
+		CurrentOrg:   case_.CurrentOrg,
+		FiledDate:    case_.FiledDate,
+		LastModified: case_.LastModified,
+		History:      case_.History,
+	}
+
+	// Convert to JSON
+	trackingJSON, err := json.Marshal(trackingInfo)
+	if err != nil {
+		log.Printf("Failed to marshal tracking info: %v", err)
+		return "", fmt.Errorf("failed to marshal tracking info: %v", err)
+	}
+
+	log.Printf("Successfully tracked case status for ID: %s", caseID)
+	return string(trackingJSON), nil
 }
 
 func main() {

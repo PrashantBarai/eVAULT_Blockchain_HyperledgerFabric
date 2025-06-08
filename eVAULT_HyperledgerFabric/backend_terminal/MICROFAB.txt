@@ -2,19 +2,49 @@
   "port": 9090,
   "endorsing_organizations": [
     {
-      "name": "LawyersOrg"
+      "name": "LawyersOrg",
+      "peers": [
+        {
+          "name": "peer0",
+          "stateDatabase": "couchdb"
+        }
+      ]
     },
     {
-      "name": "RegistrarsOrg"
+      "name": "RegistrarsOrg",
+      "peers": [
+        {
+          "name": "peer0",
+          "stateDatabase": "couchdb"
+        }
+      ]
     },
     {
-      "name": "StampReportersOrg"
+      "name": "StampReportersOrg",
+      "peers": [
+        {
+          "name": "peer0",
+          "stateDatabase": "couchdb"
+        }
+      ]
     },
     {
-      "name": "BenchClerksOrg"
+      "name": "BenchClerksOrg",
+      "peers": [
+        {
+          "name": "peer0",
+          "stateDatabase": "couchdb"
+        }
+      ]
     },
     {
-      "name": "JudgesOrg"
+      "name": "JudgesOrg",
+      "peers": [
+        {
+          "name": "peer0",
+          "stateDatabase": "couchdb"
+        }
+      ]
     }
   ],
   "channels": [
