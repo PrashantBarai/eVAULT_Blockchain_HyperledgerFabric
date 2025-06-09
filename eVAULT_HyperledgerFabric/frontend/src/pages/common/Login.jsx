@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import {
   Box,
   Paper,
@@ -15,51 +16,80 @@ import {
   Alert,
   useMediaQuery,
   useTheme,
+  CircularProgress,
 } from '@mui/material';
-import {
-  LockOutlined as LockOutlinedIcon,
-} from '@mui/icons-material';
+import { LockOutlined as LockOutlinedIcon } from '@mui/icons-material';
 import { useNavigate, Link } from 'react-router-dom';
 
-const Login = () => {
+const FinalLogin = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [licenseId, setLicenseId] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  // Define role-based dashboard paths
+  const roleDashboardPaths = {
+    lawyer: '/lawyer/dashboard',
+    judge: '/judge/dashboard',
+    benchclerk: '/benchclerk/dashboard',
+    registrar: '/registrar/dashboard',
+    stampreporter: '/stampreporter/dashboard',
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
     // Basic validation
-    if (!username || !password || !role || !licenseId) {
-      setError('All fields are required');
+    if (!role) {
+      setError('Please select a role');
+      setIsLoading(false);
       return;
     }
 
-    // Mock credentials for testing
-    const mockCredentials = {
-      lawyer: { username: 'lawyer', licenseId: 'L12345', password: 'password' },
-      judge: { username: 'judge', licenseId: 'J12345', password: 'password' },
-      benchclerk: { username: 'clerk', licenseId: 'BC12345', password: 'password' },
-      registrar: { username: 'registrar', licenseId: 'R12345', password: 'password' },
-      stampreporter: { username: 'reporter', licenseId: 'SR12345', password: 'password' },
-    };
+    if (!email || !password) {
+      setError('Email and password are required');
+      setIsLoading(false);
+      return;
+    }
 
-    // Check credentials (in a real app, this would be an API call)
-    const roleCredentials = mockCredentials[role];
-    if (roleCredentials && 
-        username === roleCredentials.username && 
-        password === roleCredentials.password &&
-        licenseId === roleCredentials.licenseId) {
-      // Redirect to appropriate dashboard based on role
-      navigate(`/${role}/dashboard`);
-    } else {
-      setError('Invalid credentials');
+    // For roles that require license ID
+    if (['lawyer', 'judge', 'benchclerk', 'registrar', 'stampreporter'].includes(role) && !licenseId) {
+      setError('License ID is required for this role');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await axios.post('http://localhost:8000/', {
+        email,
+        password,
+      });
+
+      const { access_token, user_data } = response.data;
+      
+      // Store authentication data
+      localStorage.setItem('token', access_token);
+      localStorage.setItem('user_data', JSON.stringify(user_data));
+      localStorage.setItem('user_role', role);
+
+      // Navigate to the appropriate dashboard based on role
+      if (roleDashboardPaths[role]) {
+        navigate(roleDashboardPaths[role]);
+      } else {
+        navigate('/'); // Fallback for unknown roles
+      }
+    } catch (error) {
+      console.error('Login failed:', error);
+      setError(error.response?.data?.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -183,11 +213,11 @@ const Login = () => {
               margin="normal"
               required
               fullWidth
-              label="Username"
-              autoComplete="username"
+              label="Email"
+              autoComplete="email"
               autoFocus
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   '&:hover fieldset': {
@@ -200,24 +230,26 @@ const Login = () => {
               }}
             />
             
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              label="License ID"
-              value={licenseId}
-              onChange={(e) => setLicenseId(e.target.value)}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  '&:hover fieldset': {
-                    borderColor: '#3f51b5',
+            {['lawyer', 'judge', 'benchclerk', 'registrar', 'stampreporter'].includes(role) && (
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                label="License ID"
+                value={licenseId}
+                onChange={(e) => setLicenseId(e.target.value)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    '&:hover fieldset': {
+                      borderColor: '#3f51b5',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#3f51b5',
+                    },
                   },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#3f51b5',
-                  },
-                },
-              }}
-            />
+                }}
+              />
+            )}
             
             <TextField
               margin="normal"
@@ -244,6 +276,7 @@ const Login = () => {
               type="submit"
               fullWidth
               variant="contained"
+              disabled={isLoading}
               sx={{ 
                 mt: 3, 
                 mb: 2,
@@ -259,7 +292,11 @@ const Login = () => {
                 }
               }}
             >
-              Sign In
+              {isLoading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                'Sign In'
+              )}
             </Button>
             
             <Box sx={{ mt: 2, textAlign: 'center' }}>
@@ -290,4 +327,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default FinalLogin;

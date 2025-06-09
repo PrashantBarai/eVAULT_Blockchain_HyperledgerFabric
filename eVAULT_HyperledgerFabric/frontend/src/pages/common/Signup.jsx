@@ -31,7 +31,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, Link } from 'react-router-dom';
 
-const Signup = () => {
+const FinalSignup = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -81,8 +81,6 @@ const Signup = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    
-    // Clear error when field is edited
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -921,7 +919,7 @@ const Signup = () => {
               }}
             >
               Already have an account?{' '}
-              <MuiLink component={Link} to="/">
+              <MuiLink component={Link} to="/login">
                 Sign In
               </MuiLink>
             </Typography>
@@ -932,4 +930,4 @@ const Signup = () => {
   );
 };
 
-export default Signup;
+export default FinalSignup;

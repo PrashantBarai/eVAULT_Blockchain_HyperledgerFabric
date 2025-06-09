@@ -11,6 +11,8 @@ import {
   Select,
   FormControl,
   InputLabel,
+  AppBar,
+  Toolbar,
 } from '@mui/material';
 import {
   LockOutlined as LockOutlinedIcon,
@@ -71,8 +73,28 @@ const Signup = () => {
     }
   };
 
+  // Navbar component
+  const Navbar = () => (
+    <AppBar position="static" sx={{ bgcolor: '#3f51b5' }}>
+      <Toolbar>
+        <Typography
+          variant="h6"
+          component="div"
+          sx={{ flexGrow: 1, cursor: 'pointer' }}
+          onClick={() => navigate('/')}
+        >
+          eVault
+        </Typography>
+        <Button color="inherit" onClick={() => navigate('/login')}>
+          Login
+        </Button>
+      </Toolbar>
+    </AppBar>
+  );
+
   return (
     <Container component="main" maxWidth="xs">
+      <Navbar />
       <Box
         sx={{
           minHeight: '100vh',

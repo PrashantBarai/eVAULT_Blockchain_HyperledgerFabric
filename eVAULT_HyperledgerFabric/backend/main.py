@@ -64,8 +64,15 @@ async def signup(user: UserCreate):
         user_data["rejected_cases"] = []
         user_data['cases'] = []
         user_data['notifications'] = []
+    elif user.user_type == "judge":
+        user_data["pending_cases"] = 0
+        user_data["verified_case_number"] = 0
+        user_data["rejected_case_number"] = 0
+        user_data["verified_cases"] = []
+        user_data["rejected_cases"] = []
+        user_data['cases'] = []
+        user_data['notifications'] = []
     result = users_collection.insert_one(user_data)
-    
     if result.inserted_id:return {"message": "User created successfully", "user_id": str(result.inserted_id)}
     else:raise HTTPException(status_code=500, detail="Failed to create user")
 
@@ -186,8 +193,6 @@ async def submit_case(
         cids = []  # List to store IPFS hashes
         if files:
             stored_files = store_files_locally(user_id, case_id, files)
-
-            # Upload files to Pinata (IPFS)
             for file in stored_files:
                 cid = await pin_file_to_ipfs(file)
                 if cid:
@@ -222,7 +227,7 @@ async def get_cases(user_id: str):
         return {"error": "User not found"}
 
     reg_c = []
-    if user['user_type'] in ('registrar', 'stamp-reporter', 'bench-clerk'):
+    if user['user_type'] in ('registrar', 'stamp-reporter', 'bench-clerk', 'judge'):
         if "cases" in user:
             for case_id in user["cases"]:
                 print(user['user_type'])
@@ -382,22 +387,31 @@ async def case_reject(case_id: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Error rejecting case: {str(e)}")
 
 
-
 @app.get('/lawyer/notifs/{lawyer_id}')
 async def get_notifications(lawyer_id: str):
     try:
-        notifications = list(lawyer_notification.find({"lawyer_id": lawyer_id}))
+        print(f"Fetching notifications for lawyer: {lawyer_id}")  # Debug log
+        notifications = list(lawyer_notification.find({}))
+        print(f"Raw notifications from DB: {notifications}")  # Debug log
+        
+        if not notifications:
+            print("No notifications found in DB for this lawyer")
+            return {"notifications": []}
+            
         formatted_notifications = []
         for notification in notifications:
             formatted_notifications.append({
                 "case_id": notification.get("case_id", ""),
                 "message": notification.get("message", ""),
-                "timestamp": notification.get("timestamp", "").strftime('%Y-%m-%d %H:%M:%S')
+                "timestamp": notification.get("timestamp", datetime.utcnow()).strftime('%Y-%m-%d %H:%M:%S')
             })
+        
+        print(f"Formatted notifications: {formatted_notifications}")  # Debug log
         return {"notifications": formatted_notifications}
+        
     except Exception as e:
+        print(f"Error in endpoint: {str(e)}")  # Debug log
         raise HTTPException(status_code=400, detail=f"Error fetching notifications: {str(e)}")
-    
     
 @app.post('/registrar/case-assignment/{case_id}')
 async def send_to_stamp_reporter(case_id: str):
@@ -578,3 +592,111 @@ async def bench_notif(bench_id: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching notifications: {str(e)}")
     
+    
+@app.post('/case/{case_id}/send-to-judge')
+async def send_to_registrar(case_id: str):
+    case1 = case_collection.find_one({"_id": ObjectId(case_id)})
+    print(case1['associated_lawyers'])
+    # lawyer = users_collection.find_one({"username": case1['associated_lawyers']})
+    # print("Lawyer is "+lawyer)
+    # if not lawyer:
+    #     raise HTTPException(status_code=404, detail="Lawyer not found")
+    # users_collection.update_one(
+    #     {"_id": lawyer['_id']}, 
+    #     {"$inc": {"verified_cases": 1}}  
+    # )
+    judge = list(users_collection.find({"user_type": "judge"}))
+    if not judge:
+        raise HTTPException(status_code=404, detail="No registrars found")
+    judge.sort(key=lambda r: len(r.get("cases", [])))  
+    assigned_judge = judge[0]
+    judge_id = assigned_judge["_id"]
+    users_collection.update_one(
+        {"_id": judge_id}, 
+        {"$addToSet": {"cases": case_id}}  
+    )
+    case_collection.update_one(
+        {"_id": ObjectId(case_id)}, 
+        {"$set": {"judge_registrar": str(judge_id)}}
+    )
+    return {
+        "message": "Case assigned successfully",
+        "case_id": case_id,
+        "assigned_judge": str(judge_id),
+        "judge_cases": assigned_judge.get("cases", []) + [case_id]  # Updated cases list
+    }
+
+
+
+@app.post("/case/{case_id}/decision")
+async def case_decision(case_id: str, request: Request):
+    try:
+        # Fetch the case details
+        case1 = case_collection.find_one({"_id": ObjectId(case_id)})
+        if not case1:
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        # Parse the request data
+        data = await request.json()
+        decision = data.get("decision")
+        reason = data.get("reason")
+
+        if not decision or not reason:
+            raise HTTPException(status_code=400, detail="Decision and reason are required")
+
+        # Update the case status and decision reason
+        case_collection.update_one(
+            {"_id": ObjectId(case_id)},
+            {"$set": {"status": decision, "decision_reason": reason}}
+        )
+
+        # Create a notification message
+        notification_message = f"Case '{case1['case_subject']}' (ID: {case_id}) has been {decision}. Reason: {reason}"
+
+        # Notify the lawyer
+        lawyer_id = case1.get("user_id")
+        if lawyer_id:
+            lawyer_notification.insert_one({
+                "case_id": case_id,
+                "message": notification_message,
+                "timestamp": datetime.now(),
+                "lawyer_id": lawyer_id
+            })
+
+        # Notify the registrar
+        registrar_id = case1.get("assigned_registrar")
+        if registrar_id:
+            users_collection.update_one(
+                {"_id": ObjectId(registrar_id)},
+                {"$push": {"notifications": {"case_id": case_id, "message": notification_message, "timestamp": datetime.now()}}}
+            )
+
+        # Notify the stamp reporter
+        stamp_reporter_id = case1.get("assigned_stamp_reporter")
+        if stamp_reporter_id:
+            users_collection.update_one(
+                {"_id": ObjectId(stamp_reporter_id)},
+                {"$push": {"notifications": {"case_id": case_id, "message": notification_message, "timestamp": datetime.now()}}}
+            )
+
+        # Notify the bench clerk
+        bench_clerk = users_collection.find_one({"user_type": "bench-clerk", "cases": case_id})
+        if bench_clerk:
+            users_collection.update_one(
+                {"_id": bench_clerk["_id"]},
+                {"$push": {"notifications": {"case_id": case_id, "message": notification_message, "timestamp": datetime.now()}}}
+            )
+
+        # Notify the judge
+        judge_id = case1.get("judge_registrar")
+        if judge_id:
+            users_collection.update_one(
+                {"_id": ObjectId(judge_id)},
+                {"$push": {"notifications": {"case_id": case_id, "message": notification_message, "timestamp": datetime.now()}}}
+            )
+
+        return {"message": "Decision recorded and notifications sent successfully", "case_id": case_id}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing decision: {str(e)}")
+

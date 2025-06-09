@@ -2,7 +2,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme/theme';
-
+import FinalSignup from './pages/common/Signup';
+import FinalLogin from './pages/common/Login';
 // Lawyer Pages
 import LawyerDashboard from './pages/lawyer/Dashboard';
 import LawyerCases from './pages/lawyer/Cases';
@@ -58,7 +59,8 @@ function App() {
       <BrowserRouter>
         <Routes>
           {/* Lawyer Routes */}
-          <Route path="/signup" element={<Signup/>} /> 
+          <Route path="/signup" element={<Signup/>} />
+          <Route path="/login" element={<FinalLogin/>} /> 
           <Route path="/lawyer/login" element={<LawyerLogin />} />
           <Route path="/lawyer" element={<MainLayout />}>
             <Route path="dashboard" element={<LawyerDashboard />} />
@@ -114,7 +116,7 @@ function App() {
           </Route>
 
           {/* Redirect root to lawyer login */}
-          <Route path="/" element={<LawyerLogin />} />
+          <Route path="/" element={<Signup />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>

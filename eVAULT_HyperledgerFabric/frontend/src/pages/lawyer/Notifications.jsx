@@ -27,35 +27,44 @@ const Notifications = () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) throw new Error('You must be logged in to view notifications.');
-        console.log('Token:', token); // Debug log
+        
         const user_data = localStorage.getItem('user_data');
         const lawyer_id = JSON.parse(user_data).user_id;
         if (!lawyer_id) throw new Error('Lawyer ID not found.');
-
-        console.log('Fetching notifications for lawyer:', lawyer_id); // Debug log
-
+  
+        console.log('Making request to:', `http://localhost:8000/lawyer/notifs/${lawyer_id}`);
+        
         const response = await axios.get(`http://localhost:8000/lawyer/notifs/${lawyer_id}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
         });
-
-        console.log('API Response:', response.data); // Debug log
-
+  
+        console.log('Full API response:', response);
+        console.log('Response data:', response.data);
+  
         if (response.data && response.data.notifications) {
+          console.log('Notifications received:', response.data.notifications);
           setNotifications(response.data.notifications);
         } else {
+          console.warn('Unexpected response structure:', response.data);
           throw new Error('No notifications found.');
         }
       } catch (err) {
-        console.error('Error fetching notifications:', err); // Debug log
+        console.error('Error details:', {
+          message: err.message,
+          response: err.response,
+          stack: err.stack
+        });
         setError(err.message);
       } finally {
         setLoading(false);
       }
     };
-
+  
     fetchNotifications();
-  }, []);
-
+  }, []); 
   // Filter notifications based on the search term
   const filteredNotifications = notifications.filter(
     (notification) =>

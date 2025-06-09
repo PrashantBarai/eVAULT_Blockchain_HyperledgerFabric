@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -21,6 +21,9 @@ import {
   Button,
   IconButton,
   Grid,
+  CircularProgress,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -35,50 +38,58 @@ const CaseStatus = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCase, setSelectedCase] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock data
-  const cases = [
-    {
-      id: 'CASE-2025-001',
-      title: 'Property Dispute Resolution',
-      type: 'Civil',
-      lawyerName: 'Jane Smith',
-      status: 'Pending',
-      lastUpdated: '2025-03-05',
-      documents: ['Property_Deed.pdf', 'Evidence_Photos.jpg'],
-      decision: null,
-    },
-    {
-      id: 'CASE-2025-002',
-      title: 'Contract Violation',
-      type: 'Commercial',
-      lawyerName: 'Michael Johnson',
-      status: 'Accepted',
-      lastUpdated: '2025-03-04',
-      documents: ['Contract.pdf', 'Communication_Records.pdf'],
-      decision: 'Case accepted for hearing. Scheduled for next week.',
-    },
-    {
-      id: 'CASE-2025-003',
-      title: 'Property Documentation',
-      type: 'Civil',
-      lawyerName: 'Sarah Wilson',
-      status: 'On Hold',
-      lastUpdated: '2025-03-03',
-      documents: ['Property_Papers.pdf'],
-      decision: 'Additional witness statements required.',
-    },
-    {
-      id: 'CASE-2025-004',
-      title: 'Intellectual Property Rights',
-      type: 'Commercial',
-      lawyerName: 'Robert Brown',
-      status: 'Finalized',
-      lastUpdated: '2025-03-02',
-      documents: ['Patent_Documents.pdf', 'Evidence.pdf'],
-      decision: 'Patent rights granted to the plaintiff.',
-    },
-  ];
+  useEffect(() => {
+    const fetchCases = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setError('You must be logged in to view cases.');
+          setLoading(false);
+          return;
+        }
+
+        const userString = localStorage.getItem('user_data');
+        if (!userString) {
+          setError('User data not found.');
+          setLoading(false);
+          return;
+        }
+
+        const user = JSON.parse(userString);
+        const userIdToUse = user.user_id;
+        if (!userIdToUse) {
+          setError('User ID is missing.');
+          setLoading(false);
+          return;
+        }
+
+        const response = await fetch(`http://localhost:8000/get-cases/${userIdToUse}`, {
+          method: 'GET',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch cases');
+        }
+
+        const data = await response.json();
+        setCases(Array.isArray(data.cases) ? data.cases : []);
+      } catch (error) {
+        setError(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCases();
+  }, []);
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -90,6 +101,7 @@ const CaseStatus = () => {
   };
 
   const getStatusColor = (status) => {
+    if (!status) return 'default';
     switch (status.toLowerCase()) {
       case 'pending': return 'info';
       case 'accepted': return 'success';
@@ -101,17 +113,23 @@ const CaseStatus = () => {
   };
 
   const filterCases = () => {
-    const statusMap = ['Pending', 'Accepted', 'Rejected', 'On Hold', 'Finalized'];
+    const statusMap = ['pending', 'accepted', 'rejected', 'on hold', 'finalized'];
+    const currentStatus = statusMap[tabValue];
+    
     return cases.filter(case_ => {
       const matchesSearch = 
-        case_.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        case_.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        case_.lawyerName.toLowerCase().includes(searchQuery.toLowerCase());
+        case_._id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        case_.case_subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (case_.associated_lawyers?.toLowerCase() || '').includes(searchQuery.toLowerCase());
       
-      const matchesStatus = case_.status === statusMap[tabValue];
+      const matchesStatus = case_.status?.toLowerCase() === currentStatus;
       
       return matchesSearch && matchesStatus;
     });
+  };
+
+  const handleCloseSnackbar = () => {
+    setError(null);
   };
 
   return (
@@ -119,6 +137,19 @@ const CaseStatus = () => {
       <Typography variant="h4" gutterBottom>
         Case Status Tracking
       </Typography>
+
+      {error && (
+        <Snackbar
+          open={!!error}
+          autoHideDuration={6000}
+          onClose={handleCloseSnackbar}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        >
+          <Alert onClose={handleCloseSnackbar} severity="error" sx={{ width: '100%' }}>
+            {error}
+          </Alert>
+        </Snackbar>
+      )}
 
       <Box sx={{ mb: 3 }}>
         <TextField
@@ -163,51 +194,65 @@ const CaseStatus = () => {
         </Tabs>
       </Paper>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow sx={{ background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)' }}>
-              <TableCell sx={{ color: 'white' }}>Case ID</TableCell>
-              <TableCell sx={{ color: 'white' }}>Title</TableCell>
-              <TableCell sx={{ color: 'white' }}>Type</TableCell>
-              <TableCell sx={{ color: 'white' }}>Lawyer</TableCell>
-              <TableCell sx={{ color: 'white' }}>Last Updated</TableCell>
-              <TableCell sx={{ color: 'white' }}>Status</TableCell>
-              <TableCell sx={{ color: 'white' }}>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filterCases().map((case_) => (
-              <TableRow key={case_.id}>
-                <TableCell>{case_.id}</TableCell>
-                <TableCell>{case_.title}</TableCell>
-                <TableCell>{case_.type}</TableCell>
-                <TableCell>{case_.lawyerName}</TableCell>
-                <TableCell>{case_.lastUpdated}</TableCell>
-                <TableCell>
-                  <Chip
-                    label={case_.status}
-                    color={getStatusColor(case_.status)}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={() => handleViewCase(case_)}
-                    sx={{
-                      background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-                    }}
-                  >
-                    View Details
-                  </Button>
-                </TableCell>
+      {loading ? (
+        <Box display="flex" justifyContent="center" sx={{ my: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)' }}>
+                <TableCell sx={{ color: 'white' }}>Case ID</TableCell>
+                <TableCell sx={{ color: 'white' }}>Title</TableCell>
+                <TableCell sx={{ color: 'white' }}>Type</TableCell>
+                <TableCell sx={{ color: 'white' }}>Status</TableCell>
+                <TableCell sx={{ color: 'white' }}>Filed Date</TableCell>
+                <TableCell sx={{ color: 'white' }}>Actions</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {filterCases().length > 0 ? (
+                filterCases().map((case_) => (
+                  <TableRow key={case_._id}>
+                    <TableCell>{case_._id}</TableCell>
+                    <TableCell>{case_.case_subject}</TableCell>
+                    <TableCell>{case_.case_type}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={case_.status || 'Pending'}
+                        color={getStatusColor(case_.status)}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {new Date(case_.filed_date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={() => handleViewCase(case_)}
+                        sx={{
+                          background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
+                        }}
+                      >
+                        View Details
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    No cases found
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {/* Case Details Dialog */}
       <Dialog
@@ -229,10 +274,10 @@ const CaseStatus = () => {
             <Grid container spacing={3}>
               <Grid item xs={12}>
                 <Typography variant="h6" gutterBottom>
-                  {selectedCase.title}
+                  {selectedCase.case_subject}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" paragraph>
-                  Case ID: {selectedCase.id}
+                  Case ID: {selectedCase._id}
                 </Typography>
               </Grid>
               
@@ -242,11 +287,11 @@ const CaseStatus = () => {
                     Case Information
                   </Typography>
                   <Typography variant="body2" paragraph>
-                    Type: {selectedCase.type}
+                    Type: {selectedCase.case_type}
                     <br />
-                    Lawyer: {selectedCase.lawyerName}
+                    Filed Date: {new Date(selectedCase.filed_date).toLocaleDateString()}
                     <br />
-                    Last Updated: {selectedCase.lastUpdated}
+                    Status: {selectedCase.status || 'Pending'}
                   </Typography>
                 </Paper>
               </Grid>
@@ -257,38 +302,21 @@ const CaseStatus = () => {
                     Status
                   </Typography>
                   <Chip
-                    label={selectedCase.status}
+                    label={selectedCase.status || 'Pending'}
                     color={getStatusColor(selectedCase.status)}
                     icon={<GavelIcon />}
                   />
                 </Paper>
               </Grid>
 
-              <Grid item xs={12}>
-                <Paper sx={{ p: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Documents
-                  </Typography>
-                  {selectedCase.documents.map((doc, index) => (
-                    <Chip
-                      key={index}
-                      icon={<DescriptionIcon />}
-                      label={doc}
-                      sx={{ m: 0.5 }}
-                      color="primary"
-                    />
-                  ))}
-                </Paper>
-              </Grid>
-
-              {selectedCase.decision && (
+              {selectedCase.case_description && (
                 <Grid item xs={12}>
                   <Paper sx={{ p: 2 }}>
                     <Typography variant="subtitle2" gutterBottom>
-                      Decision/Comments
+                      Description
                     </Typography>
                     <Typography variant="body2">
-                      {selectedCase.decision}
+                      {selectedCase.case_description}
                     </Typography>
                   </Paper>
                 </Grid>

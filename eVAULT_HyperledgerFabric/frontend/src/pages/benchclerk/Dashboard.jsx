@@ -38,19 +38,24 @@ const StatCard = ({ title, value, icon, color }) => (
 );
 
 const Dashboard = () => {
-  // Mock data
+  // Get user data from localStorage
+  const userData = JSON.parse(localStorage.getItem('user_data'));
+  const userRole = localStorage.getItem('user_role');
+
+  // Default clerk info structure
   const clerkInfo = {
-    name: 'John Smith',
-    position: 'Senior Bench Clerk',
-    department: 'Civil Court Division',
-    joinDate: 'January 2020',
+    name: userData?.username || 'User',
+    position: userRole === 'clerk' ? 'Bench Clerk' : 'Court Staff',
+    department: userData?.department || 'Court Division',
+    joinDate: new Date().toLocaleDateString(), // Default to current date if not available
   };
 
+  // Stats data from localStorage or defaults
   const stats = {
-    totalCases: 156,
-    forwardedToJudge: 89,
-    pendingConfirmations: 12,
-    newNotifications: 5,
+    totalCases: userData?.pending_cases + userData?.verified_cases + userData?.rejected_cases || 0,
+    forwardedToJudge: userData?.verified_cases || 0,
+    pendingConfirmations: userData?.pending_cases || 0,
+    newNotifications: userData?.notifications_count || 0,
   };
 
   return (

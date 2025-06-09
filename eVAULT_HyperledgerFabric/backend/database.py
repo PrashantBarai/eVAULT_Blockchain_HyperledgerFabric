@@ -1,10 +1,9 @@
 from pymongo import MongoClient
 
 # Database connection
-client = MongoClient('mongodb://localhost:27017/')
+client = MongoClient("mongodb+srv://ammar:F10zIHigRBhYxtrm@cluster0.o2qwc.mongodb.net/")
 db = client['evault']
 
-# Collections
 users_collection = db["users"]
 case_collection = db["cases"]
 lawyer_notification = db["lawyer_notifications"]

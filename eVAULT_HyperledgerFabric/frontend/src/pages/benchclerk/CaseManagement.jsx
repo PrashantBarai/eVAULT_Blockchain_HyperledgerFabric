@@ -18,6 +18,8 @@ import {
   DialogActions,
   IconButton,
   CircularProgress,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -32,7 +34,13 @@ const CaseManagement = ({ userId }) => {
   const [selectedCase, setSelectedCase] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [forwarding, setForwarding] = useState(false);
   const [error, setError] = useState('');
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
 
   useEffect(() => {
     const fetchCases = async () => {
@@ -45,7 +53,6 @@ const CaseManagement = ({ userId }) => {
         }
 
         const userString = localStorage.getItem('user_data');
-        console.log(userString);
         if (!userString) {
           setError('User data not found.');
           setLoading(false);
@@ -54,7 +61,6 @@ const CaseManagement = ({ userId }) => {
 
         const user = JSON.parse(userString);
         const userIdToUse = userId || user.user_id;
-        console.log(user.userId);
         if (!userIdToUse) {
           setError('User ID is missing.');
           setLoading(false);
@@ -88,15 +94,69 @@ const CaseManagement = ({ userId }) => {
     setOpenDialog(true);
   };
 
-  const handleForwardToJudge = (caseId) => {
+  const handleForwardToJudge = async (caseId) => {
     if (!caseId) return;
-    console.log('Forwarding case to judge:', caseId);
+    
+    try {
+      setForwarding(true);
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`http://localhost:8000/case/${caseId}/send-to-judge`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to forward case to judge');
+      }
+
+      const result = await response.json();
+      
+      // Update the local state to reflect the changes
+      setCases(cases.map(c => {
+        if (c._id === caseId) {
+          return {
+            ...c,
+            judge_registrar: result.assigned_judge,
+            status: 'Sent to Judge'
+          };
+        }
+        return c;
+      }));
+
+      // Show success message
+      setSnackbar({
+        open: true,
+        message: `Case successfully forwarded to judge: ${result.assigned_judge}`,
+        severity: 'success'
+      });
+      
+    } catch (error) {
+      console.error('Error forwarding case:', error);
+      setSnackbar({
+        open: true,
+        message: `Error: ${error.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setForwarding(false);
+      setOpenDialog(false);
+    }
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   const filteredCases = cases.filter((case_) => {
     return (
       case_._id?.toString().toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.case_subject?.toLowerCase().includes(searchQuery.toLowerCase())
+      case_.case_subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      case_.case_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (case_.judge_registrar?.toLowerCase() || '').includes(searchQuery.toLowerCase())
     );
   });
 
@@ -109,7 +169,7 @@ const CaseManagement = ({ userId }) => {
       <TextField
         fullWidth
         variant="outlined"
-        placeholder="Search cases..."
+        placeholder="Search cases by ID, subject, type or judge..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         sx={{ mb: 3 }}
@@ -137,28 +197,50 @@ const CaseManagement = ({ userId }) => {
                 <TableCell sx={{ color: 'white' }}>Title</TableCell>
                 <TableCell sx={{ color: 'white' }}>Type</TableCell>
                 <TableCell sx={{ color: 'white' }}>Registrar</TableCell>
+                <TableCell sx={{ color: 'white' }}>Judge</TableCell>
                 <TableCell sx={{ color: 'white' }}>Filed Date</TableCell>
+                <TableCell sx={{ color: 'white' }}>Status</TableCell>
                 <TableCell sx={{ color: 'white' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredCases.map((case_) => (
-                <TableRow key={case_._id}>
-                  <TableCell>{case_._id}</TableCell>
-                  <TableCell>{case_.case_subject}</TableCell>
-                  <TableCell>{case_.case_type}</TableCell>
-                  <TableCell>{case_.assigned_registrar || 'N/A'}</TableCell>
-                  <TableCell>{case_.filed_date}</TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleViewCase(case_)} sx={{ color: '#4a90e2' }}>
-                      <VisibilityIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleForwardToJudge(case_._id)} sx={{ color: '#8e44ad' }}>
-                      <SendIcon />
-                    </IconButton>
+              {filteredCases.length > 0 ? (
+                filteredCases.map((case_) => (
+                  <TableRow key={case_._id}>
+                    <TableCell>{case_._id}</TableCell>
+                    <TableCell>{case_.case_subject}</TableCell>
+                    <TableCell>{case_.case_type}</TableCell>
+                    <TableCell>{case_.assigned_registrar || 'N/A'}</TableCell>
+                    <TableCell>{case_.judge_registrar || 'Not assigned'}</TableCell>
+                    <TableCell>{new Date(case_.filed_date).toLocaleDateString()}</TableCell>
+                    <TableCell>{case_.status || 'Pending'}</TableCell>
+                    <TableCell>
+                      <IconButton 
+                        onClick={() => handleViewCase(case_)} 
+                        sx={{ color: '#4a90e2' }}
+                        disabled={forwarding}
+                      >
+                        <VisibilityIcon />
+                      </IconButton>
+                      {!case_.judge_registrar && (
+                        <IconButton 
+                          onClick={() => handleForwardToJudge(case_._id)} 
+                          sx={{ color: '#8e44ad' }}
+                          disabled={forwarding}
+                        >
+                          {forwarding ? <CircularProgress size={24} /> : <SendIcon />}
+                        </IconButton>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    No cases found
                   </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -181,36 +263,63 @@ const CaseManagement = ({ userId }) => {
                 {selectedCase.case_subject}
               </Typography>
               <Typography variant="body1" gutterBottom>
-                Case ID: {selectedCase._id}
+                <strong>Case ID:</strong> {selectedCase._id}
               </Typography>
               <Typography variant="body1" gutterBottom>
-                Type: {selectedCase.case_type}
+                <strong>Type:</strong> {selectedCase.case_type}
               </Typography>
               <Typography variant="body1" gutterBottom>
-                Assigned Registrar: {selectedCase.assigned_registrar || 'N/A'}
+                <strong>Description:</strong> {selectedCase.case_description || 'N/A'}
               </Typography>
               <Typography variant="body1" gutterBottom>
-                Filed Date: {selectedCase.filed_date}
+                <strong>Assigned Registrar:</strong> {selectedCase.assigned_registrar || 'N/A'}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Assigned Judge:</strong> {selectedCase.judge_registrar || 'Not assigned'}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Filed Date:</strong> {new Date(selectedCase.filed_date).toLocaleDateString()}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Status:</strong> {selectedCase.status || 'Pending'}
               </Typography>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Close</Button>
-          <Button
-            variant="contained"
-            startIcon={<SendIcon />}
-            onClick={() => handleForwardToJudge(selectedCase?._id)}
-            sx={{
-              background: 'linear-gradient(45deg, #4a90e2 30%, #8e44ad 90%)',
-              color: 'white',
-            }}
-            disabled={!selectedCase}
-          >
-            Forward to Judge
-          </Button>
+          {selectedCase && !selectedCase.judge_registrar && (
+            <Button
+              variant="contained"
+              startIcon={forwarding ? <CircularProgress size={20} /> : <SendIcon />}
+              onClick={() => handleForwardToJudge(selectedCase._id)}
+              sx={{
+                background: 'linear-gradient(45deg, #4a90e2 30%, #8e44ad 90%)',
+                color: 'white',
+              }}
+              disabled={forwarding}
+            >
+              Forward to Judge
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
