@@ -455,10 +455,11 @@ func (s *RegistrarContract) GetAllState(ctx contractapi.TransactionContextInterf
 // QueryStats gets statistics for registrar dashboard
 func (s *RegistrarContract) QueryStats(ctx contractapi.TransactionContextInterface) (string, error) {
 	stats := struct {
-		PendingCases    int `json:"pendingCases"`
-		VerifiedCases   int `json:"verifiedCases"`
-		RejectedCases   int `json:"rejectedCases"`
-		AssignedToStamp int `json:"assignedToStamp"`
+		PendingCases     int `json:"pendingCases"`
+		VerifiedCases    int `json:"verifiedCases"`
+		RejectedCases    int `json:"rejectedCases"`
+		AssignedToStamp  int `json:"assignedToStamp"`
+		TransferredCases int `json:"transferredCases"`
 	}{}
 
 	// Count pending cases
@@ -470,7 +471,6 @@ func (s *RegistrarContract) QueryStats(ctx contractapi.TransactionContextInterfa
 		}
 		pendingIterator.Close()
 	}
-
 	// Count verified cases
 	verifiedIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"VERIFIED_BY_REGISTRAR","currentOrg":"RegistrarsOrg"}}`)
 	if err == nil {
@@ -479,6 +479,16 @@ func (s *RegistrarContract) QueryStats(ctx contractapi.TransactionContextInterfa
 			_, _ = verifiedIterator.Next()
 		}
 		verifiedIterator.Close()
+	}
+
+	// Also count cases that have been transferred but show as verified in this channel
+	transferredIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"TRANSFERRED_TO_STAMPREPORTER","currentOrg":"StampReportersOrg"}}`)
+	if err == nil {
+		for transferredIterator.HasNext() {
+			stats.TransferredCases++
+			_, _ = transferredIterator.Next()
+		}
+		transferredIterator.Close()
 	}
 
 	// Count rejected cases
@@ -490,8 +500,9 @@ func (s *RegistrarContract) QueryStats(ctx contractapi.TransactionContextInterfa
 		}
 		rejectedIterator.Close()
 	}
-
-	// Count cases assigned to stamp reporter
+	// Count cases assigned/transferred to stamp reporter
+	// We need to check both channels
+	// First check the current channel
 	assignedIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"PENDING_STAMP_REPORTER_REVIEW","currentOrg":"StampReportersOrg"}}`)
 	if err == nil {
 		for assignedIterator.HasNext() {
@@ -499,6 +510,31 @@ func (s *RegistrarContract) QueryStats(ctx contractapi.TransactionContextInterfa
 			_, _ = assignedIterator.Next()
 		}
 		assignedIterator.Close()
+	} // Also count transferred cases in this channel
+	transferredIterator3, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"TRANSFERRED_TO_STAMPREPORTER","currentOrg":"StampReportersOrg"}}`)
+	if err == nil {
+		for transferredIterator3.HasNext() {
+			stats.TransferredCases++
+			_, _ = transferredIterator3.Next()
+		}
+		transferredIterator3.Close()
+	}
+
+	// If we're on the lawyer-registrar channel, check for cross-channel invocations to the lawyer channel
+	crossChannelArgs := [][]byte{[]byte("QueryStats"), []byte("{}")}
+	crossChannelResponse := ctx.GetStub().InvokeChaincode("registrar", crossChannelArgs, "registrar-stampreporter-channel")
+	if crossChannelResponse.Status == 200 {
+		// Try to parse the cross-channel stats
+		var crossStats struct {
+			AssignedToStamp  int `json:"assignedToStamp"`
+			TransferredCases int `json:"transferredCases"`
+		}
+		if err := json.Unmarshal(crossChannelResponse.Payload, &crossStats); err == nil {
+			// Add the cross-channel stats to our count
+			log.Printf("Found %d assigned cases and %d transferred cases in registrar-stampreporter-channel",
+				crossStats.AssignedToStamp, crossStats.TransferredCases)
+			stats.AssignedToStamp += crossStats.AssignedToStamp
+		}
 	}
 
 	// Convert stats to JSON
@@ -562,6 +598,66 @@ func (s *RegistrarContract) GetCaseById(ctx contractapi.TransactionContextInterf
 	return &caseObj, nil
 }
 
+// GetState is a simple wrapper around the GetState function of the chaincode stub
+// This is useful for cross-channel invocations where we want to get raw state data
+func (s *RegistrarContract) GetState(ctx contractapi.TransactionContextInterface, key string) ([]byte, error) {
+	log.Printf("GetState called with key: %s", key)
+
+	// Simply delegate to the stub's GetState function
+	data, err := ctx.GetStub().GetState(key)
+	if err != nil {
+		log.Printf("Failed to get state for key %s: %v", key, err)
+		return nil, fmt.Errorf("failed to get state for key %s: %v", key, err)
+	}
+
+	if data == nil {
+		log.Printf("No state found for key: %s", key)
+		return nil, fmt.Errorf("no state found for key: %s", key)
+	}
+
+	log.Printf("Successfully retrieved state for key: %s (length: %d bytes)", key, len(data))
+	return data, nil
+}
+
+// PutState is a simple wrapper around the PutState function of the chaincode stub
+// This is useful for cross-channel invocations where we want to update state data
+func (s *RegistrarContract) PutState(ctx contractapi.TransactionContextInterface, key string, value []byte) error {
+	log.Printf("PutState called with key: %s, value length: %d bytes", key, len(value))
+
+	// Simply delegate to the stub's PutState function
+	err := ctx.GetStub().PutState(key, value)
+	if err != nil {
+		log.Printf("Failed to put state for key %s: %v", key, err)
+		return fmt.Errorf("failed to put state for key %s: %v", key, err)
+	}
+
+	log.Printf("Successfully put state for key: %s", key)
+	return nil
+}
+
+// UpdateCase updates an existing case in the ledger
+func (s *RegistrarContract) UpdateCase(ctx contractapi.TransactionContextInterface, caseID string, caseJSON string) error {
+	log.Printf("UpdateCase called for case ID: %s", caseID)
+
+	// Check if case exists
+	existingCase, err := ctx.GetStub().GetState(caseID)
+	if err != nil {
+		return fmt.Errorf("failed to read case: %v", err)
+	}
+	if existingCase == nil {
+		return fmt.Errorf("case does not exist: %s", caseID)
+	}
+
+	// Update the case with new data
+	err = ctx.GetStub().PutState(caseID, []byte(caseJSON))
+	if err != nil {
+		return fmt.Errorf("failed to update case: %v", err)
+	}
+
+	log.Printf("Case %s successfully updated", caseID)
+	return nil
+}
+
 func main() {
 	registrarChaincode, err := contractapi.NewChaincode(&RegistrarContract{})
 	if err != nil {
@@ -571,4 +667,239 @@ func main() {
 	if err := registrarChaincode.Start(); err != nil {
 		log.Panicf("Error starting registrar chaincode: %v", err)
 	}
+}
+
+// FetchAndStoreCaseFromLawyerChannel fetches a case from lawyer-registrar-channel and stores it on registrar-stampreporter-channel
+// in a single transaction, then assigns it to stamp reporter
+func (s *RegistrarContract) FetchAndStoreCaseFromLawyerChannel(ctx contractapi.TransactionContextInterface, caseID string) error {
+	log.Printf("FetchAndStoreCaseFromLawyerChannel called for case ID: %s", caseID)
+
+	// Get case directly from the chain to see if it exists before making cross-channel calls
+	existingCase, _ := ctx.GetStub().GetState(caseID)
+	if existingCase != nil {
+		log.Printf("Case %s already exists on registrar-stampreporter-channel, proceeding with assignment", caseID)
+		// If case exists, just assign it to stamp reporter
+		return s.AssignToStampReporter(ctx, caseID)
+	}
+
+	// Instead of using GetState which returns just a string, we'll create a custom function for cross-channel
+	// that returns an array to meet the expected schema
+	args := [][]byte{[]byte("GetCaseById"), []byte(caseID)}
+
+	// Step 1: Read from the lawyer-registrar-channel
+	log.Printf("Invoking GetCaseById on lawyer-registrar-channel for case ID: %s", caseID)
+	response := ctx.GetStub().InvokeChaincode("registrar", args, "lawyer-registrar-channel")
+
+	// Check the response status - 200 is OK in contractapi
+	if response.Status != 200 {
+		errMsg := fmt.Sprintf("Failed to fetch case from lawyer-registrar-channel: %s", string(response.Message))
+		log.Printf(errMsg)
+		return fmt.Errorf(errMsg)
+	}
+	// Check if payload is empty
+	if response.Payload == nil || len(response.Payload) == 0 {
+		errMsg := fmt.Sprintf("Case data not found on lawyer-registrar-channel for ID: %s", caseID)
+		log.Printf(errMsg)
+		return fmt.Errorf(errMsg)
+	}
+
+	log.Printf("Successfully received response from lawyer-registrar-channel, response length: %d bytes", len(response.Payload))
+	// Parse the response
+	var caseObj Case
+	err := json.Unmarshal(response.Payload, &caseObj)
+	if err != nil {
+		log.Printf("Failed to unmarshal case data: %v", err)
+		return fmt.Errorf("failed to unmarshal case data: %v", err)
+	}
+
+	log.Printf("Successfully parsed case with ID: %s, Title: %s", caseObj.ID, caseObj.Title)
+
+	// Ensure case has a valid ID before proceeding
+	if caseObj.ID == "" {
+		errMsg := "Invalid case data: Missing ID field"
+		log.Printf(errMsg)
+		return fmt.Errorf(errMsg)
+	}
+	// Update lawyer-registrar-channel with the transferred status
+	log.Printf("Updating case status on lawyer-registrar-channel to TRANSFERRED_TO_STAMPREPORTER")
+
+	// Create a new history item for the transfer
+	txTimestampForTransfer, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		log.Printf("Failed to get transaction timestamp: %v", err)
+		return fmt.Errorf("failed to get transaction timestamp: %v", err)
+	}
+	timestampForTransfer := time.Unix(txTimestampForTransfer.Seconds, 0).Format(time.RFC3339)
+	// Direct modification of the case object
+	lawyerChannelCase := caseObj
+	lawyerChannelCase.Status = "TRANSFERRED_TO_STAMPREPORTER"
+	lawyerChannelCase.CurrentOrg = "StampReportersOrg"
+	lawyerChannelCase.LastModified = timestampForTransfer
+
+	// Add history item for the transfer
+	lawyerChannelCase.History = append(lawyerChannelCase.History, HistoryItem{
+		Status:       "TRANSFERRED_TO_STAMPREPORTER",
+		Organization: "RegistrarsOrg",
+		Timestamp:    timestampForTransfer,
+		Comments:     "Case transferred to registrar-stampreporter-channel",
+	}) // Update the lawyer channel with new status
+	lawyerCaseJSON, err := json.Marshal(lawyerChannelCase)
+	if err != nil {
+		log.Printf("Failed to marshal case for lawyer channel update: %v", err)
+		// Continue with the process even if this update fails
+	} else {
+		// Directly modify the state on the lawyer-registrar-channel using a separate transaction
+		log.Printf("Updating case on lawyer-registrar-channel with new status TRANSFERRED_TO_STAMPREPORTER")
+
+		// We need to pass the JSON as a string for UpdateCase
+		jsonStr := string(lawyerCaseJSON)
+
+		// First, log the full JSON we're sending for update
+		log.Printf("Updating case on lawyer-registrar-channel with JSON: %s", jsonStr)
+
+		// Try with UpdateCase first - this is more likely to work across organizations
+		updateArgs := [][]byte{[]byte("UpdateCase"), []byte(caseID), []byte(jsonStr)}
+		updateResponse := ctx.GetStub().InvokeChaincode("registrar", updateArgs, "lawyer-registrar-channel")
+
+		if updateResponse.Status == 200 {
+			log.Printf("Successfully updated case status on lawyer-registrar-channel to TRANSFERRED_TO_STAMPREPORTER")
+		} else {
+			// Try with PutState as fallback
+			putStateArgs := [][]byte{[]byte("PutState"), []byte(caseID), lawyerCaseJSON}
+			updateResponse = ctx.GetStub().InvokeChaincode("registrar", putStateArgs, "lawyer-registrar-channel")
+
+			if updateResponse.Status == 200 {
+				log.Printf("Successfully updated case status on lawyer-registrar-channel to TRANSFERRED_TO_STAMPREPORTER using fallback method")
+			} else {
+				log.Printf("Warning: Failed to update case status on lawyer-registrar-channel: %s", string(updateResponse.Message))
+				log.Printf("Will continue with the transfer anyway, but lawyer-registrar-channel may not show the correct status")
+			}
+		}
+	}
+
+	// Update status and organization for this channel
+	caseObj.Status = "VERIFIED_BY_REGISTRAR"
+	caseObj.CurrentOrg = "RegistrarsOrg"
+
+	// Add a history entry about the transfer
+	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		log.Printf("Failed to get transaction timestamp: %v", err)
+		return fmt.Errorf("failed to get transaction timestamp: %v", err)
+	}
+	timestamp := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
+
+	// Initialize any null arrays to avoid null pointer exceptions
+	if caseObj.Documents == nil {
+		caseObj.Documents = make([]Document, 0)
+	}
+	if caseObj.History == nil {
+		caseObj.History = make([]HistoryItem, 0)
+	}
+	if caseObj.AssociatedLawyers == nil {
+		caseObj.AssociatedLawyers = make([]string, 0)
+	}
+
+	historyItem := HistoryItem{
+		Status:       "VERIFIED_BY_REGISTRAR",
+		Organization: "RegistrarsOrg",
+		Timestamp:    timestamp,
+		Comments:     "Case transferred from lawyer-registrar-channel to registrar-stampreporter-channel",
+	}
+
+	caseObj.History = append(caseObj.History, historyItem)
+
+	// Update last modified time
+	caseObj.LastModified = timestamp
+	// Step 2: Store the case on this channel (registrar-stampreporter-channel)
+	updatedCaseJSON, err := json.Marshal(caseObj)
+	if err != nil {
+		log.Printf("Failed to marshal updated case: %v", err)
+		return fmt.Errorf("failed to marshal updated case: %v", err)
+	}
+
+	log.Printf("Storing case %s on registrar-stampreporter-channel", caseID)
+	// Store the case on the current channel
+	err = ctx.GetStub().PutState(caseID, updatedCaseJSON)
+	if err != nil {
+		log.Printf("Failed to store case on current channel: %v", err)
+		return fmt.Errorf("failed to store case on current channel: %v", err)
+	}
+
+	// Give it a moment to be committed
+	log.Printf("Case stored, proceeding with assignment")
+	// For debugging, log the JSON being stored
+	log.Printf("Stored case JSON: %s", string(updatedCaseJSON))
+
+	log.Printf("Case %s successfully stored on registrar-stampreporter-channel", caseID)
+
+	// Also copy the case to the StampReporter chaincode's state
+	syncArgs := [][]byte{[]byte("StoreCase"), []byte(string(updatedCaseJSON))}
+	syncResponse := ctx.GetStub().InvokeChaincode("stampreporter", syncArgs, "registrar-stampreporter-channel")
+	if syncResponse.Status != 200 {
+		log.Printf("Warning: Failed to sync case to stampreporter chaincode: %s", string(syncResponse.Message))
+		log.Printf("The stampreporter chaincode may not be able to see this case. Continuing with assignment...")
+	} else {
+		log.Printf("Successfully synced case to stampreporter chaincode")
+	}
+
+	// Now assign it to stamp reporter - instead of calling AssignToStampReporter, we'll implement the logic here
+	// to avoid any issues with the transaction context
+	// We can use the caseObj we already have since we've already parsed it
+
+	// Check if case is verified
+	if caseObj.Status != "VERIFIED_BY_REGISTRAR" {
+		errMsg := fmt.Sprintf("case must be verified before assignment to stamp reporter, current status: %s", caseObj.Status)
+		log.Printf(errMsg)
+		return fmt.Errorf(errMsg)
+	}
+
+	// In a real system, random allocation logic would be implemented here
+	log.Printf("Randomly assigning case %s to stamp reporters organization", caseID)
+
+	// Get current timestamp again for the assignment
+	txTimestamp, err = ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return fmt.Errorf("failed to get transaction timestamp: %v", err)
+	}
+	timestampForAssignment := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
+
+	// Update case status and organization for assignment
+	caseObj.Status = "PENDING_STAMP_REPORTER_REVIEW"
+	caseObj.CurrentOrg = "StampReportersOrg"
+
+	// Add history item for the assignment
+	caseObj.History = append(caseObj.History, HistoryItem{
+		Status:       "ASSIGNED_TO_STAMP_REPORTER",
+		Organization: "RegistrarsOrg",
+		Timestamp:    timestampForAssignment,
+		Comments:     "Case assigned for document validation through random allocation",
+	})
+
+	// Save updated case with stamp reporter assignment
+	caseObj.LastModified = timestampForAssignment
+	assignedCaseJSON, err := json.Marshal(caseObj)
+	if err != nil {
+		log.Printf("Failed to marshal assigned case: %v", err)
+		return fmt.Errorf("failed to marshal assigned case: %v", err)
+	}
+
+	// Update the state
+	err = ctx.GetStub().PutState(caseID, assignedCaseJSON)
+	if err != nil {
+		log.Printf("Failed to store assigned case: %v", err)
+		return fmt.Errorf("failed to store assigned case: %v", err)
+	}
+
+	// Also update the case in StampReporter chaincode with assigned status
+	assignSyncArgs := [][]byte{[]byte("StoreCase"), []byte(string(assignedCaseJSON))}
+	assignSyncResponse := ctx.GetStub().InvokeChaincode("stampreporter", assignSyncArgs, "registrar-stampreporter-channel")
+	if assignSyncResponse.Status != 200 {
+		log.Printf("Warning: Failed to sync assigned status to stampreporter chaincode: %s", string(assignSyncResponse.Message))
+	} else {
+		log.Printf("Successfully synced assigned status to stampreporter chaincode")
+	}
+
+	log.Printf("Case %s successfully transferred and assigned to stamp reporter", caseID)
+	return nil
 }
