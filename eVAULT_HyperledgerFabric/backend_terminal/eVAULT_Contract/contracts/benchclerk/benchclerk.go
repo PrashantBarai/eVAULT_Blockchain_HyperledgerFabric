@@ -1,4 +1,4 @@
-package benchclerk
+package main
 
 import (
 	"encoding/json"
@@ -96,9 +96,20 @@ func (bc *BenchClerkContract) InitLedger(ctx contractapi.TransactionContextInter
 	return nil
 }
 
-// ForwardToJudge forwards a verified case to a judge
+// ForwardToJudge forwards a verified case to a judge using cross-channel communication
 func (s *BenchClerkContract) ForwardToJudge(ctx contractapi.TransactionContextInterface, caseID string, assignmentDetails string) error {
 	log.Printf("ForwardToJudge called for case ID: %s", caseID)
+
+	// Get MSP ID of the submitting client
+	clientOrgID, err := ctx.GetClientIdentity().GetMSPID()
+	if err != nil {
+		return fmt.Errorf("failed to get client MSP ID: %v", err)
+	}
+
+	// Only BenchClerksOrg members should call this function
+	if clientOrgID != "BenchClerksOrg" && clientOrgID != "BenchClerksOrgMSP" {
+		return fmt.Errorf("this function can only be called by members of BenchClerksOrg")
+	}
 
 	// Get the case
 	caseJSON, err := ctx.GetStub().GetState(caseID)
@@ -106,16 +117,23 @@ func (s *BenchClerkContract) ForwardToJudge(ctx contractapi.TransactionContextIn
 		log.Printf("Failed to read case: %v", err)
 		return fmt.Errorf("failed to read case: %v", err)
 	}
-	if caseJSON == nil {
-		log.Printf("Case does not exist: %s", caseID)
-		return fmt.Errorf("case does not exist: %s", caseID)
-	}
 
 	var caseObj Case
-	err = json.Unmarshal(caseJSON, &caseObj)
-	if err != nil {
-		log.Printf("Failed to unmarshal case data: %v", err)
-		return err
+	if caseJSON == nil {
+		log.Printf("Case does not exist locally: %s. Trying to fetch from StampReporter channel", caseID)
+		// Try to fetch the case from StampReporter channel
+		fetchedCase, err := s.FetchAndStoreCaseFromStampReporterChannel(ctx, caseID)
+		if err != nil {
+			log.Printf("Failed to fetch case from StampReporter channel: %v", err)
+			return fmt.Errorf("failed to fetch case from StampReporter channel: %v", err)
+		}
+		caseObj = *fetchedCase
+	} else {
+		err = json.Unmarshal(caseJSON, &caseObj)
+		if err != nil {
+			log.Printf("Failed to unmarshal case data: %v", err)
+			return err
+		}
 	}
 
 	// Initialize empty arrays if they are null
@@ -159,12 +177,38 @@ func (s *BenchClerkContract) ForwardToJudge(ctx contractapi.TransactionContextIn
 
 	// Save updated case
 	caseObj.LastModified = timestamp
-	caseJSON, err = json.Marshal(caseObj)
+	updatedCaseJSON, err := json.Marshal(caseObj)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal updated case: %v", err)
 	}
 
-	return ctx.GetStub().PutState(caseID, caseJSON)
+	// Update the case in BenchClerk's ledger
+	err = ctx.GetStub().PutState(caseID, updatedCaseJSON)
+	if err != nil {
+		return fmt.Errorf("failed to update case in BenchClerk's ledger: %v", err)
+	}
+
+	// Forward the case to Judge through cross-channel invocation
+	caseJSONStr := string(updatedCaseJSON)
+	args := [][]byte{[]byte("StoreCase"), []byte(caseJSONStr)}
+	response := ctx.GetStub().InvokeChaincode("judge", args, "benchclerk-judge-channel")
+
+	// Check if the Judge chaincode response is successful
+	if response.Status != 200 {
+		errMsg := fmt.Sprintf("Failed to forward case to Judge: %s", string(response.Message))
+		log.Printf(errMsg)
+
+		// Revert the status change in case of failure
+		caseObj.Status = "RECEIVED_BY_BENCHCLERK"
+		caseObj.CurrentOrg = "BenchClerksOrg"
+		revertJSON, _ := json.Marshal(caseObj)
+		ctx.GetStub().PutState(caseID, revertJSON)
+
+		return fmt.Errorf(errMsg)
+	}
+
+	log.Printf("Successfully forwarded case %s to Judge", caseID)
+	return nil
 }
 
 // UpdateHearingDetails updates the hearing details for a case
@@ -177,13 +221,20 @@ func (s *BenchClerkContract) UpdateHearingDetails(ctx contractapi.TransactionCon
 		log.Printf("Failed to read case: %v", err)
 		return fmt.Errorf("failed to read case: %v", err)
 	}
-	if caseJSON == nil {
-		log.Printf("Case does not exist: %s", caseID)
-		return fmt.Errorf("case does not exist: %s", caseID)
-	}
 
 	var caseObj Case
-	err = json.Unmarshal(caseJSON, &caseObj)
+	if caseJSON == nil {
+		log.Printf("Case does not exist locally: %s. Trying to fetch from StampReporter channel", caseID)
+		// Try to fetch the case from StampReporter channel
+		fetchedCase, err := s.FetchAndStoreCaseFromStampReporterChannel(ctx, caseID)
+		if err != nil {
+			log.Printf("Failed to fetch case from StampReporter channel: %v", err)
+			return fmt.Errorf("failed to fetch case from StampReporter channel: %v", err)
+		}
+		caseObj = *fetchedCase
+	} else {
+		err = json.Unmarshal(caseJSON, &caseObj)
+	}
 	if err != nil {
 		log.Printf("Failed to unmarshal case data: %v", err)
 		return err
@@ -519,8 +570,9 @@ func (bc *BenchClerkContract) GetCaseById(ctx contractapi.TransactionContextInte
 		return nil, fmt.Errorf("failed to read case: %v", err)
 	}
 	if caseJSON == nil {
-		log.Printf("Case not found: %s", caseID)
-		return nil, fmt.Errorf("case not found: %s", caseID)
+		log.Printf("Case not found locally: %s. Trying to fetch from StampReporter channel", caseID)
+		// Try to fetch the case from StampReporter channel
+		return bc.FetchAndStoreCaseFromStampReporterChannel(ctx, caseID)
 	}
 
 	var caseObj Case
@@ -606,6 +658,326 @@ func (bc *BenchClerkContract) QueryStats(ctx contractapi.TransactionContextInter
 	log.Printf("Statistics: %s", string(statsJSON))
 	return string(statsJSON), nil
 }
+
+// StoreCase stores a case submitted from another organization's chaincode
+func (bc *BenchClerkContract) StoreCase(ctx contractapi.TransactionContextInterface, caseJSON string) error {
+	log.Printf("StoreCase called with payload length: %d bytes", len(caseJSON))
+
+	// Parse case data
+	var newCase Case
+	err := json.Unmarshal([]byte(caseJSON), &newCase)
+	if err != nil {
+		log.Printf("Failed to unmarshal case data: %v", err)
+		return fmt.Errorf("failed to unmarshal case data: %v", err)
+	}
+
+	log.Printf("Successfully parsed case with ID: %s, Title: %s", newCase.ID, newCase.Title)
+
+	// Initialize empty arrays if they are null
+	if newCase.Documents == nil {
+		newCase.Documents = make([]Document, 0)
+	}
+	if newCase.History == nil {
+		newCase.History = make([]HistoryItem, 0)
+	}
+	if newCase.AssociatedLawyers == nil {
+		newCase.AssociatedLawyers = make([]string, 0)
+	}
+
+	// Verify required fields
+	if newCase.ID == "" {
+		log.Printf("Case ID is required")
+		return fmt.Errorf("case ID is required")
+	}
+
+	// Store the case in the ledger
+	updatedCaseJSON, err := json.Marshal(newCase)
+	if err != nil {
+		log.Printf("Failed to marshal updated case: %v", err)
+		return err
+	}
+
+	err = ctx.GetStub().PutState(newCase.ID, updatedCaseJSON)
+	if err != nil {
+		log.Printf("Failed to save case: %v", err)
+		return err
+	}
+
+	log.Printf("Successfully stored case with ID: %s", newCase.ID)
+	return nil
+}
+
+// ForwardCaseToLawyer forwards a case with judgment to the lawyer's channel
+func (bc *BenchClerkContract) ForwardCaseToLawyer(ctx contractapi.TransactionContextInterface, caseID string) error {
+	log.Printf("ForwardCaseToLawyer called for case ID: %s", caseID)
+
+	// Get MSP ID of the submitting client
+	clientOrgID, err := ctx.GetClientIdentity().GetMSPID()
+	if err != nil {
+		return fmt.Errorf("failed to get client MSP ID: %v", err)
+	}
+
+	// Only BenchClerksOrg members should call this function
+	if clientOrgID != "BenchClerksOrg" && clientOrgID != "BenchClerksOrgMSP" {
+		return fmt.Errorf("this function can only be called by members of BenchClerksOrg")
+	}
+
+	// Get the case from BenchClerk's ledger
+	caseJSON, err := ctx.GetStub().GetState(caseID)
+	if err != nil {
+		return fmt.Errorf("failed to read case: %v", err)
+	}
+	if caseJSON == nil {
+		return fmt.Errorf("case does not exist: %s", caseID)
+	}
+
+	var caseObj Case
+	err = json.Unmarshal(caseJSON, &caseObj)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal case data: %v", err)
+	}
+
+	// Verify case status - only forward cases with received judgments
+	if caseObj.Status != "JUDGMENT_RECEIVED" {
+		return fmt.Errorf("case status must be JUDGMENT_RECEIVED for forwarding to Lawyer, current status: %s", caseObj.Status)
+	}
+
+	// Get current timestamp
+	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return fmt.Errorf("failed to get transaction timestamp: %v", err)
+	}
+	timestamp := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
+
+	// Update case status for forwarding to lawyer
+	caseObj.Status = "DECISION_CONFIRMED"
+	caseObj.CurrentOrg = "LawyersOrg"
+	caseObj.LastModified = timestamp
+
+	// Add history item
+	caseObj.History = append(caseObj.History, HistoryItem{
+		Status:       "DECISION_CONFIRMED",
+		Organization: "BenchClerksOrg",
+		Timestamp:    timestamp,
+		Comments:     "Judgment confirmed and forwarded to lawyer",
+	})
+
+	// Marshal the updated case data
+	updatedCaseJSON, err := json.Marshal(caseObj)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated case data: %v", err)
+	}
+
+	// Update case in BenchClerk's ledger
+	err = ctx.GetStub().PutState(caseID, updatedCaseJSON)
+	if err != nil {
+		return fmt.Errorf("failed to update case in BenchClerk's ledger: %v", err)
+	}
+
+	// Forward the case to lawyer through cross-channel invocation
+	// Convert the JSON byte array to string as the lawyer expects a string parameter
+	caseJSONStr := string(updatedCaseJSON)
+	args := [][]byte{[]byte("StoreCase"), []byte(caseJSONStr)}
+	response := ctx.GetStub().InvokeChaincode("lawyer", args, "benchclerk-lawyer-channel")
+
+	// Check if the lawyer chaincode response is successful
+	if response.Status != 200 {
+		errMsg := fmt.Sprintf("Failed to forward case to lawyer: %s", string(response.Message))
+		log.Printf(errMsg)
+
+		// Revert the status change in case of failure
+		caseObj.Status = "JUDGMENT_RECEIVED"
+		caseObj.CurrentOrg = "BenchClerksOrg"
+		revertJSON, _ := json.Marshal(caseObj)
+		ctx.GetStub().PutState(caseID, revertJSON)
+
+		return fmt.Errorf(errMsg)
+	}
+
+	log.Printf("Successfully forwarded case %s to lawyer", caseID)
+	return nil
+}
+
+// FetchAndStoreCaseFromJudgeChannel fetches cases with judgment from the Judge organization
+func (bc *BenchClerkContract) FetchAndStoreCaseFromJudgeChannel(ctx contractapi.TransactionContextInterface) error {
+	log.Printf("FetchAndStoreCaseFromJudgeChannel called")
+
+	// Get MSP ID of the submitting client
+	clientOrgID, err := ctx.GetClientIdentity().GetMSPID()
+	if err != nil {
+		return fmt.Errorf("failed to get client MSP ID: %v", err)
+	}
+
+	// Only BenchClerksOrg members should call this function
+	if clientOrgID != "BenchClerksOrg" && clientOrgID != "BenchClerksOrgMSP" {
+		return fmt.Errorf("this function can only be called by members of BenchClerksOrg")
+	}
+
+	// Invoke the GetJudgedCases function in the Judge chaincode to get all cases with judgment
+	args := [][]byte{[]byte("GetJudgedCases")}
+	response := ctx.GetStub().InvokeChaincode("judge", args, "benchclerk-judge-channel")
+
+	// Check if the Judge chaincode response is successful
+	if response.Status != 200 {
+		errMsg := fmt.Sprintf("Failed to fetch judged cases from Judge: %s", string(response.Message))
+		log.Printf(errMsg)
+		return fmt.Errorf(errMsg)
+	}
+
+	// If no cases were found, return without error
+	if string(response.Payload) == "[]" {
+		log.Printf("No judged cases to fetch from Judge")
+		return nil
+	}
+
+	// Parse the response payload which should be a JSON array of cases
+	var judgedCases []Case
+	err = json.Unmarshal(response.Payload, &judgedCases)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal judged cases: %v", err)
+	}
+
+	log.Printf("Fetched %d judged cases from Judge", len(judgedCases))
+
+	// Store each case in BenchClerk's ledger
+	for _, caseObj := range judgedCases {
+		// Verify the case has a judgment and the current org is BenchClerksOrg
+		if caseObj.Status != "JUDGMENT_ISSUED" || caseObj.CurrentOrg != "BenchClerksOrg" {
+			log.Printf("Skipping case %s: status=%s, currentOrg=%s", caseObj.ID, caseObj.Status, caseObj.CurrentOrg)
+			continue
+		}
+
+		// Get current timestamp
+		txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+		if err != nil {
+			log.Printf("Failed to get transaction timestamp for case %s: %v", caseObj.ID, err)
+			continue
+		}
+		timestamp := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
+
+		// Update case status to indicate judgment has been received
+		caseObj.Status = "JUDGMENT_RECEIVED"
+		caseObj.LastModified = timestamp
+
+		// Add history item
+		caseObj.History = append(caseObj.History, HistoryItem{
+			Status:       "JUDGMENT_RECEIVED",
+			Organization: "BenchClerksOrg",
+			Timestamp:    timestamp,
+			Comments:     fmt.Sprintf("Judgment received from Judge: %s", caseObj.Decision),
+		})
+
+		// Marshal the updated case
+		caseJSON, err := json.Marshal(caseObj)
+		if err != nil {
+			log.Printf("Failed to marshal case %s: %v", caseObj.ID, err)
+			continue
+		}
+
+		// Store the case in BenchClerk's ledger
+		err = ctx.GetStub().PutState(caseObj.ID, caseJSON)
+		if err != nil {
+			log.Printf("Failed to store case %s: %v", caseObj.ID, err)
+			continue
+		}
+
+		log.Printf("Successfully stored case %s with judgment in BenchClerk's ledger", caseObj.ID)
+	}
+
+	return nil
+}
+
+// FetchAndStoreCaseFromStampReporterChannel fetches a case from StampReporter channel when it doesn't exist locally
+func (bc *BenchClerkContract) FetchAndStoreCaseFromStampReporterChannel(ctx contractapi.TransactionContextInterface, caseID string) (*Case, error) {
+	log.Printf("FetchAndStoreCaseFromStampReporterChannel called for case ID: %s", caseID)
+
+	// Get MSP ID of the submitting client
+	clientOrgID, err := ctx.GetClientIdentity().GetMSPID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client MSP ID: %v", err)
+	}
+
+	// Only BenchClerksOrg members should call this function
+	if clientOrgID != "BenchClerksOrg" && clientOrgID != "BenchClerksOrgMSP" {
+		return nil, fmt.Errorf("this function can only be called by members of BenchClerksOrg")
+	}
+
+	// Invoke the stampreporter chaincode on the stampreporter-benchclerk-channel to get the case
+	args := [][]byte{[]byte("GetCaseById"), []byte(caseID)}
+	response := ctx.GetStub().InvokeChaincode("stampreporter", args, "stampreporter-benchclerk-channel")
+
+	// Check the response status
+	if response.Status != 200 {
+		errMsg := fmt.Sprintf("Failed to fetch case from StampReporter channel: %s", string(response.Message))
+		log.Printf(errMsg)
+		return nil, fmt.Errorf(errMsg)
+	}
+
+	// Check if payload is empty
+	if response.Payload == nil || len(response.Payload) == 0 {
+		errMsg := fmt.Sprintf("Case data not found on StampReporter channel for ID: %s", caseID)
+		log.Printf(errMsg)
+		return nil, fmt.Errorf(errMsg)
+	}
+
+	// Use the payload as the case bytes
+	caseBytes := response.Payload
+
+	// Unmarshal the case data
+	var caseData Case
+	if err := json.Unmarshal(caseBytes, &caseData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal case data: %v", err)
+	}
+
+	// Verify case status should be for BenchClerk
+	if caseData.CurrentOrg != "BenchClerksOrg" {
+		return nil, fmt.Errorf("case %s is not currently assigned to BenchClerksOrg", caseID)
+	}
+
+	// Initialize empty arrays if they are null
+	if caseData.Documents == nil {
+		caseData.Documents = make([]Document, 0)
+	}
+	if caseData.History == nil {
+		caseData.History = make([]HistoryItem, 0)
+	}
+	if caseData.AssociatedLawyers == nil {
+		caseData.AssociatedLawyers = make([]string, 0)
+	}
+
+	// Get current timestamp
+	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction timestamp: %v", err)
+	}
+	timestamp := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
+
+	// Add receipt history
+	caseData.History = append(caseData.History, HistoryItem{
+		Status:       "RECEIVED_BY_BENCHCLERK",
+		Organization: "BenchClerksOrg",
+		Timestamp:    timestamp,
+		Comments:     "Case retrieved from StampReporter channel",
+	})
+
+	// Update last modified timestamp
+	caseData.LastModified = timestamp
+
+	// Store the case in BenchClerk's ledger
+	updatedCaseBytes, err := json.Marshal(caseData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal updated case data: %v", err)
+	}
+
+	if err := ctx.GetStub().PutState(caseID, updatedCaseBytes); err != nil {
+		return nil, fmt.Errorf("failed to store case in BenchClerk's ledger: %v", err)
+	}
+
+	log.Printf("Successfully fetched and stored case %s from StampReporter channel", caseID)
+	return &caseData, nil
+}
+
+// This is the correct implementation - removed duplicate declaration
 
 func main() {
 	benchClerkChaincode, err := contractapi.NewChaincode(&BenchClerkContract{})
