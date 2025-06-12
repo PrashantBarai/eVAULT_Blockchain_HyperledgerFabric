@@ -30,15 +30,12 @@ app.add_middleware(
 @app.post("/signup")
 async def signup(user: UserCreate):
     existing_user = users_collection.find_one({"username": user.username})
-    if existing_user:raise HTTPException(status_code=400, detail="Username already registered")
-    user_data = {
-        "username": user.username,
-        "email": user.email,
-        "phone_number": user.phone_number,
-        "password": user.password,
-        "user_type": user.user_type,
-    }
-    if user.user_type=='lawyer':
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    user_data = user.dict(exclude_unset=True)  # This will include all fields sent from frontend
+
+    # Optionally, add default fields based on user_type as before
+    if user.user_type == 'lawyer':
         user_data["pending_cases"] = 0
         user_data["verified_cases"] = 0
         user_data["rejected_cases"] = 0
@@ -72,9 +69,12 @@ async def signup(user: UserCreate):
         user_data["rejected_cases"] = []
         user_data['cases'] = []
         user_data['notifications'] = []
+
     result = users_collection.insert_one(user_data)
-    if result.inserted_id:return {"message": "User created successfully", "user_id": str(result.inserted_id)}
-    else:raise HTTPException(status_code=500, detail="Failed to create user")
+    if result.inserted_id:
+        return {"message": "User created successfully", "user_id": str(result.inserted_id)}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create user")
 
 
 @app.post("/", response_model=Token)

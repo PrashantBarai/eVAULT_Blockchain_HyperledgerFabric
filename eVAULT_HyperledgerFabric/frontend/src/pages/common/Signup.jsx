@@ -31,20 +31,20 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, Link } from 'react-router-dom';
 
-const FinalSignup = () => {
+const Signup = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeStep, setActiveStep] = useState(0);
-  const [role, setRole] = useState('');
+  const [user_type, setRole] = useState('');
   const [formData, setFormData] = useState({
     // Common fields
-    fullName: '',
+    username: '',
     email: '',
     licenseId: '',
     password: '',
     confirmPassword: '',
-    contactNumber: '',
+    phone_number: '',
     address: '',
     
     // Lawyer-specific fields
@@ -81,6 +81,8 @@ const FinalSignup = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Clear error when field is edited
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -99,30 +101,31 @@ const FinalSignup = () => {
     const newErrors = {};
     
     if (step === 0) {
-      if (!role) newErrors.role = 'Please select a role';
+      if (!user_type) newErrors.user_type = 'Please select a role';
     } else if (step === 1) {
-      if (!formData.fullName) newErrors.fullName = 'Full name is required';
+      if (!formData.username) newErrors.username = 'Full name is required';
       if (!formData.email) newErrors.email = 'Email is required';
       if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
       if (!formData.licenseId) newErrors.licenseId = 'License ID is required';
       if (!formData.password) newErrors.password = 'Password is required';
       if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
       if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
-      if (!formData.contactNumber) newErrors.contactNumber = 'Contact number is required';
+      if (!formData.phone_number) newErrors.phone_number = 'Contact number is required';
     } else if (step === 2) {
-      if (role === 'lawyer') {
+      // Role-specific validation
+      if (user_type === 'lawyer') {
         if (!formData.barCouncilNumber) newErrors.barCouncilNumber = 'Bar Council Number is required';
         if (!formData.practicingAreas) newErrors.practicingAreas = 'Practicing areas are required';
-      } else if (role === 'judge') {
+      } else if (user_type === 'judge') {
         if (!formData.courtAssigned) newErrors.courtAssigned = 'Court assignment is required';
         if (!formData.judgementExpertise) newErrors.judgementExpertise = 'Judgement expertise is required';
-      } else if (role === 'benchclerk') {
+      } else if (user_type === 'benchclerk') {
         if (!formData.courtSection) newErrors.courtSection = 'Court section is required';
         if (!formData.clerkId) newErrors.clerkId = 'Clerk ID is required';
-      } else if (role === 'registrar') {
+      } else if (user_type === 'registrar') {
         if (!formData.registrarId) newErrors.registrarId = 'Registrar ID is required';
         if (!formData.department) newErrors.department = 'Department is required';
-      } else if (role === 'stampreporter') {
+      } else if (user_type === 'stampreporter') {
         if (!formData.reporterId) newErrors.reporterId = 'Reporter ID is required';
         if (!formData.reportingArea) newErrors.reportingArea = 'Reporting area is required';
       }
@@ -144,22 +147,39 @@ const FinalSignup = () => {
     setActiveStep(prev => prev - 1);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (validateStep(activeStep)) {
-      // In a real application, this would send the data to the server
-      console.log('Form submitted:', formData);
-      console.log('Documents:', documents);
-      
-      // Show success message
-      setSuccessMessage(`Registration successful! Your ${role} account is pending approval.`);
-      
-      // Only redirect after form is submitted
-      if (activeStep === steps.length - 1) {
-        setTimeout(() => {
-          navigate('/');
-        }, 3000);
+    if (validateStep(activeStep) && activeStep === steps.length - 1) {
+      // Prepare the data to be sent (excluding files)
+      const dataToSend = {
+        user_type,
+        ...formData,
+      };
+      console.log('Data to send (excluding files):', dataToSend);
+
+      try {
+        const response = await fetch('http://localhost:8000/signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(dataToSend),
+        });
+
+        if (response.ok) {
+          setSuccessMessage(`Registration successful! Your ${user_type} account is pending approval.`);
+          setTimeout(() => {
+            navigate('/');
+          }, 3000);
+        } else {
+          const errorData = await response.json();
+          alert(`Signup failed: ${errorData.detail || 'Unknown error'}`);
+        }
+      } catch (error) {
+        alert('An error occurred during signup. Please try again.');
       }
+    } else {
+      handleNext();
     }
   };
 
@@ -177,7 +197,7 @@ const FinalSignup = () => {
       },
     };
 
-    switch (role) {
+    switch (user_type) {
       case 'lawyer':
         return (
           <>
@@ -421,14 +441,14 @@ const FinalSignup = () => {
             fullWidth 
             margin="normal" 
             required 
-            error={!!errors.role}
+            error={!!errors.user_type}
             sx={textFieldSx}
           >
             <InputLabel id="role-select-label">Role</InputLabel>
             <Select
               labelId="role-select-label"
               id="role-select"
-              value={role}
+              value={user_type}
               label="Role"
               onChange={(e) => setRole(e.target.value)}
             >
@@ -450,11 +470,11 @@ const FinalSignup = () => {
               required
               fullWidth
               label="Full Name"
-              name="fullName"
-              value={formData.fullName}
+              name="username"
+              value={formData.username}
               onChange={handleChange}
-              error={!!errors.fullName}
-              helperText={errors.fullName}
+              error={!!errors.username}
+              helperText={errors.username}
               sx={textFieldSx}
             />
             <TextField
@@ -522,11 +542,11 @@ const FinalSignup = () => {
               required
               fullWidth
               label="Contact Number"
-              name="contactNumber"
-              value={formData.contactNumber}
+              name="phone_number"
+              value={formData.phone_number}
               onChange={handleChange}
-              error={!!errors.contactNumber}
-              helperText={errors.contactNumber}
+              error={!!errors.phone_number}
+              helperText={errors.phone_number}
               sx={textFieldSx}
             />
             <TextField
@@ -555,11 +575,11 @@ const FinalSignup = () => {
               Please upload the required documents:
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {role === 'lawyer' && 'Bar Council Certificate, Government ID, Educational Certificates'}
-              {role === 'judge' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {role === 'benchclerk' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {role === 'registrar' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {role === 'stampreporter' && 'Certification, Government ID, Educational Certificates'}
+              {user_type === 'lawyer' && 'Bar Council Certificate, Government ID, Educational Certificates'}
+              {user_type === 'judge' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type=== 'benchclerk' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type=== 'registrar' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type=== 'stampreporter' && 'Certification, Government ID, Educational Certificates'}
             </Typography>
             
             <Button
@@ -615,14 +635,14 @@ const FinalSignup = () => {
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Role:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                  {user_type.charAt(0).toUpperCase() + user_type.slice(1)}
                 </Typography>
               </Grid>
               
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Full Name:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  {formData.fullName}
+                  {formData.username}
                 </Typography>
               </Grid>
               
@@ -643,7 +663,7 @@ const FinalSignup = () => {
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Contact Number:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  {formData.contactNumber}
+                  {formData.phone_number}
                 </Typography>
               </Grid>
               
@@ -661,7 +681,7 @@ const FinalSignup = () => {
                 </Typography>
               </Grid>
               
-              {role === 'lawyer' && (
+              {user_type === 'lawyer' && (
                 <>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Bar Council Number:</Typography>
@@ -684,7 +704,7 @@ const FinalSignup = () => {
                 </>
               )}
               
-              {role === 'judge' && (
+              {user_type === 'judge' && (
                 <>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Court Assigned:</Typography>
@@ -919,7 +939,7 @@ const FinalSignup = () => {
               }}
             >
               Already have an account?{' '}
-              <MuiLink component={Link} to="/login">
+              <MuiLink component={Link} to="/">
                 Sign In
               </MuiLink>
             </Typography>
@@ -930,4 +950,4 @@ const FinalSignup = () => {
   );
 };
 
-export default FinalSignup;
+export default Signup;

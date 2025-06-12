@@ -59,7 +59,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           {/* Lawyer Routes */}
-          <Route path="/signup" element={<Signup/>} />
+          <Route path="/signup" element={<FinalSignup/>} />
           <Route path="/login" element={<FinalLogin/>} /> 
           <Route path="/lawyer/login" element={<LawyerLogin />} />
           <Route path="/lawyer" element={<MainLayout />}>

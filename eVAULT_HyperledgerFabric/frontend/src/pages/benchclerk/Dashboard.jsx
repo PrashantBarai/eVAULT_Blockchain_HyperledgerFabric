@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Grid,
@@ -14,6 +13,7 @@ import {
   Pending as PendingIcon,
   Notifications as NotificationsIcon,
 } from '@mui/icons-material';
+import PropTypes from 'prop-types';
 
 const StatCard = ({ title, value, icon, color }) => (
   <Card
@@ -37,25 +37,31 @@ const StatCard = ({ title, value, icon, color }) => (
   </Card>
 );
 
-const Dashboard = () => {
-  // Get user data from localStorage
-  const userData = JSON.parse(localStorage.getItem('user_data'));
-  const userRole = localStorage.getItem('user_role');
+// Add PropTypes validation
+StatCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.number
+  ]).isRequired,
+  icon: PropTypes.element,
+  color: PropTypes.string.isRequired,
+};
 
-  // Default clerk info structure
+const Dashboard = () => {
+  // Mock data
   const clerkInfo = {
-    name: userData?.username || 'User',
-    position: userRole === 'clerk' ? 'Bench Clerk' : 'Court Staff',
-    department: userData?.department || 'Court Division',
-    joinDate: new Date().toLocaleDateString(), // Default to current date if not available
+    name: 'John Smith',
+    position: 'Senior Bench Clerk',
+    department: 'Civil Court Division',
+    joinDate: 'January 2020',
   };
 
-  // Stats data from localStorage or defaults
   const stats = {
-    totalCases: userData?.pending_cases + userData?.verified_cases + userData?.rejected_cases || 0,
-    forwardedToJudge: userData?.verified_cases || 0,
-    pendingConfirmations: userData?.pending_cases || 0,
-    newNotifications: userData?.notifications_count || 0,
+    totalCases: 156,
+    forwardedToJudge: 89,
+    pendingConfirmations: 12,
+    newNotifications: 5,
   };
 
   return (
@@ -65,8 +71,9 @@ const Dashboard = () => {
         sx={{
           p: 3,
           mb: 4,
-          background: 'linear-gradient(120deg, #4a90e2 0%, #8e44ad 100%)',
+          background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
           color: 'white',
+          borderRadius: 2,
         }}
       >
         <Typography variant="h4" gutterBottom>
