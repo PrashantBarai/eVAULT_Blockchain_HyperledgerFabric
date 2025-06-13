@@ -3,6 +3,7 @@
 #
 
 # Logs
+/venv/
 logs
 *.log
 npm-debug.log*
@@ -75,5 +76,5 @@ typings/
 
 # Serverless directories
 .serverless
-eVAULT_Blockchain_HyperledgerFabric/eVAULT_HyperledgerFabric/venv/
+
 package-lock.json
