@@ -631,6 +631,46 @@ func (s *LawyerContract) GetCasesByLawyerID(ctx contractapi.TransactionContextIn
 	return cases, nil
 }
 
+// StoreCase stores a case submitted from another organization's chaincode
+func (s *LawyerContract) StoreCase(ctx contractapi.TransactionContextInterface, caseJSON string) error {
+	log.Printf("StoreCase called with payload length: %d bytes", len(caseJSON))
+
+	// Parse case data
+	var newCase Case
+	err := json.Unmarshal([]byte(caseJSON), &newCase)
+	if err != nil {
+		log.Printf("Failed to unmarshal case data: %v", err)
+		return fmt.Errorf("failed to unmarshal case data: %v", err)
+	}
+
+	log.Printf("Successfully parsed case with ID: %s, Title: %s", newCase.ID, newCase.Title)
+
+	// Initialize the case structure to ensure no nil fields
+	s.initializeCaseStructure(&newCase)
+
+	// Verify required fields
+	if newCase.ID == "" {
+		log.Printf("Case ID is required")
+		return fmt.Errorf("case ID is required")
+	}
+
+	// Store the case in the ledger
+	updatedCaseJSON, err := json.Marshal(newCase)
+	if err != nil {
+		log.Printf("Failed to marshal updated case: %v", err)
+		return err
+	}
+
+	err = ctx.GetStub().PutState(newCase.ID, updatedCaseJSON)
+	if err != nil {
+		log.Printf("Failed to save case: %v", err)
+		return err
+	}
+
+	log.Printf("Successfully stored case with ID: %s from cross-channel invocation", newCase.ID)
+	return nil
+}
+
 // initializeCaseStructure initializes case structure and handles legacy data
 func (s *LawyerContract) initializeCaseStructure(case_ *Case) {
 	// Initialize empty arrays if they are null
