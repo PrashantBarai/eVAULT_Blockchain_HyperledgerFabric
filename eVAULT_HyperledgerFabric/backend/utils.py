@@ -6,10 +6,10 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import List, Optional
 from dotenv import load_dotenv
-from backend.database import users_collection, case_collection
+from database import users_collection, case_collection
 import httpx
 from fastapi import UploadFile
-from backend.config import *
+from config import *
 import requests
 import uuid
 import os

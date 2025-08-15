@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+class DepartmentAssignment(BaseModel):
+    department: str
 class UserCreate(BaseModel):
     username: str
     email: str

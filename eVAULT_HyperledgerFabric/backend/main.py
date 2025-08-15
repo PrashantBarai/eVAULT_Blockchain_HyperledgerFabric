@@ -4,12 +4,12 @@ from pymongo import MongoClient
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-from backend.models import *
-from backend.utils import *
+from models import *
+from utils import *
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder
-from backend.config import *
-from backend.database import users_collection,case_collection, lawyer_notification, benchclerk_notification
+from config import *
+from database import users_collection,case_collection, lawyer_notification, benchclerk_notification
 from typing import List, Optional
 from bson import ObjectId
 import os
@@ -106,8 +106,8 @@ def store_files_locally(user_id: str, case_id: str, files: List[UploadFile]) -> 
 
     stored_files = []
     for file in files:
-        file_content = file.file.read()  # Read file once
-        if not file_content:  # Check if file is empty
+        file_content = file.file.read() 
+        if not file_content:  
             print(f"Warning: {file.filename} is empty!")
             continue
         
@@ -168,6 +168,7 @@ async def submit_case(
             "filed_date": filed_date_parsed,
             "associated_lawyers": associated_lawyers,
             "associated_judge": associated_judge,
+            # "assigned_registrar": ObjectId,
             "case_subject": case_subject,
             "latest_update": latest_update,
             "status": status,
@@ -265,16 +266,28 @@ async def case_history(user_id: str):
     
 
 
+# @app.get('/case/{case_id}')
+# async def case_details(case_id: str):
+#     try:
+#         case1 = case_collection.find_one({"_id": ObjectId(case_id)})
+#         if not case1:raise HTTPException(status_code=404, detail="Case not found")        
+#         case1["_id"] = str(case1["_id"])
+#         return {"case": case1}
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"Error fetching case details: {str(e)}")
 @app.get('/case/{case_id}')
 async def case_details(case_id: str):
     try:
         case1 = case_collection.find_one({"_id": ObjectId(case_id)})
-        if not case1:raise HTTPException(status_code=404, detail="Case not found")        
-        case1["_id"] = str(case1["_id"])
+        if not case1:
+            raise HTTPException(status_code=404, detail="Case not found")
+        # Convert all ObjectId fields to str
+        for key, value in case1.items():
+            if isinstance(value, ObjectId):
+                case1[key] = str(value)
         return {"case": case1}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching case details: {str(e)}")
-    
     
 @app.post('/case/{case_id}/send-to-registrar')
 async def send_to_registrar(case_id: str):
