@@ -103,12 +103,9 @@ const CaseSubmission = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const token = localStorage.getItem('token');
-    console.log("Token from localStorage:", token);
-    if (!token) {
-      alert('You must be logged in to submit a case.');
-      return;
-    }
+    // Log all form details before submission
+    console.log('Case Submission Form Data:', formData);
+    console.log('Uploaded Files:', files);
 
     const userString = localStorage.getItem('user_data');
     let user = null;
@@ -124,10 +121,10 @@ const CaseSubmission = () => {
     formDataToSend.append('case_subject', formData.caseSubject);
     formDataToSend.append('latest_update', formData.latestUpdate);
     formDataToSend.append('status', 'pending');
-    formDataToSend.append('user_id', user.user_id);
+    formDataToSend.append('user_id', user._id);
     formDataToSend.append('client', formData.client);
-    formDataToSend.append('case_type', formData.caseType); // Append case type
-    formDataToSend.append('description', formData.description); // Append description
+    formDataToSend.append('case_type', formData.caseType);
+    formDataToSend.append('description', formData.description);
     if (files.length > 0) {
       files.forEach((file) => {
         formDataToSend.append('files', file);
@@ -140,9 +137,9 @@ const CaseSubmission = () => {
     try {
       const response = await fetch('http://localhost:8000/submit-case', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        // headers: {
+        //   Authorization: `Bearer ${token}`,
+        // },
         body: formDataToSend,
       });
       console.log(response);

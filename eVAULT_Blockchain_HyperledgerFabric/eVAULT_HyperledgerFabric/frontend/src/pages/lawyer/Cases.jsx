@@ -32,21 +32,21 @@ const Cases = () => {
   useEffect(() => {
     const fetchCases = async () => {
       try {
-        const token = localStorage.getItem('token');
-        console.log(token);
-        if (!token) {
-          throw new Error('You must be logged in to view cases.');
-        }
+        // const token = localStorage.getItem('token');
+        // console.log(token);
+        // if (!token) {
+        //   throw new Error('You must be logged in to view cases.');
+        // }
 
         const userString = localStorage.getItem('user_data');
         const user = JSON.parse(userString);
-        const userId = user.user_id;
+        const userId = user._id;
 
         const response = await fetch(`http://localhost:8000/get-cases/${userId}`, {
           method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          // headers: {
+          //   Authorization: `Bearer ${token}`,
+          // },
         });
 
         if (!response.ok) {

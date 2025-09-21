@@ -2,8 +2,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme/theme';
-import FinalSignup from './pages/common/Signup';
-import FinalLogin from './pages/common/Login';
+// import FinalSignup from './pages/common/Signup';
+import Login from './pages/common/Login';
 
 import Signup from './pages/common/Signup';
 // Lawyer Pages
@@ -14,7 +14,7 @@ import LawyerCaseDetails from './pages/lawyer/CaseDetails';
 import LawyerCaseHistory from './pages/lawyer/CaseHistory';
 import LawyerNotifications from './pages/lawyer/Notifications';
 import LawyerProfile from './pages/lawyer/Profile';
-import LawyerLogin from './pages/lawyer/Login';
+// import LawyerLogin from './pages/lawyer/Login';
 // import Signup from './pages/lawyer/Signup';
 
 // Bench Clerk Pages
@@ -62,7 +62,7 @@ function App() {
         <Routes>
           {/* Lawyer Routes */}
           <Route path="/signup" element={<Signup/>} />
-          <Route path="/login" element={<FinalLogin/>} /> 
+          <Route path="/login" element={<Login/>} /> 
           {/* <Route path="/lawyer/login" element={<LawyerLogin />} /> */}
           <Route path="/lawyer" element={<MainLayout />}>
             <Route path="dashboard" element={<LawyerDashboard />} />
