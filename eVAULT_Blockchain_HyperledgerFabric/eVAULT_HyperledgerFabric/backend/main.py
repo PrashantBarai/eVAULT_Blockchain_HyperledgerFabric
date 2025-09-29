@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Form, Request
 from pydantic import BaseModel
-from pymongo import MongoClient
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
@@ -12,6 +11,7 @@ from config import *
 from database import users_collection,case_collection, notifications
 from typing import List, Optional
 from bson import ObjectId
+import random
 import os
 import uuid
 
@@ -63,7 +63,10 @@ async def signup(
         "password": password,
         "phone_number": phone_number,
         "address": address, 
+        "notifications":[],
     }
+    if user_type=="registrar":
+        data['cases'] = []
     users_collection.insert_one(data)
     
     return {"message": "Signup data received"}
@@ -178,23 +181,12 @@ async def case_history(user_id: str):
         raise HTTPException(status_code=500, detail="Internal server error")
     
 
-
-# @app.get('/case/{case_id}')
-# async def case_details(case_id: str):
-#     try:
-#         case1 = case_collection.find_one({"_id": ObjectId(case_id)})
-#         if not case1:raise HTTPException(status_code=404, detail="Case not found")        
-#         case1["_id"] = str(case1["_id"])
-#         return {"case": case1}
-#     except Exception as e:
-#         raise HTTPException(status_code=400, detail=f"Error fetching case details: {str(e)}")
 @app.get('/case/{case_id}')
 async def case_details(case_id: str):
     try:
         case1 = case_collection.find_one({"_id": ObjectId(case_id)})
         if not case1:
             raise HTTPException(status_code=404, detail="Case not found")
-        # Convert all ObjectId fields to str
         for key, value in case1.items():
             if isinstance(value, ObjectId):
                 case1[key] = str(value)
@@ -204,37 +196,28 @@ async def case_details(case_id: str):
     
 @app.post('/case/{case_id}/send-to-registrar')
 async def send_to_registrar(case_id: str):
-    case1 = case_collection.find_one({"_id": ObjectId(case_id)})
-    print(case1['associated_lawyers'])
-    lawyer = users_collection.find_one({"username": case1['associated_lawyers']})
-    # print("Lawyer is "+lawyer)
-    if not lawyer:
-        raise HTTPException(status_code=404, detail="Lawyer not found")
-    users_collection.update_one(
-        {"_id": lawyer['_id']}, 
-        {"$inc": {"verified_cases": 1}}  
-    )
+    case = case_collection.find_one({"_id": ObjectId(case_id)})
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
     registrars = list(users_collection.find({"user_type": "registrar"}))
     if not registrars:
         raise HTTPException(status_code=404, detail="No registrars found")
-    registrars.sort(key=lambda r: len(r.get("cases", [])))  
-    assigned_registrar = registrars[0]
+    assigned_registrar = random.choice(registrars)
     registrar_id = assigned_registrar["_id"]
     users_collection.update_one(
-        {"_id": registrar_id}, 
-        {"$addToSet": {"cases": case_id}}  # Ensures uniqueness
+        {"_id": registrar_id},
+        {"$addToSet": {"cases": case_id}}
     )
-    case_collection.update_one(
-        {"_id": ObjectId(case_id)}, 
-        {"$set": {"assigned_registrar": str(registrar_id)}}
-    )
+
+    updated_registrar = users_collection.find_one({"_id": registrar_id})
+    updated_cases = updated_registrar.get("cases", [])
+
     return {
         "message": "Case assigned successfully",
         "case_id": case_id,
         "assigned_registrar": str(registrar_id),
-        "registrar_cases": assigned_registrar.get("cases", []) + [case_id]  # Updated cases list
+        "registrar_cases": updated_cases
     }
-
 
     
 @app.get('/registrar/{user_id}')
@@ -244,17 +227,11 @@ async def registrar_dashboard(user_id: str):
         if not registrar:
             raise HTTPException(status_code=404, detail="Registrar not found")
         assigned_cases = registrar.get("cases", [])
-        # verified_cases = users_collection.find_one({"_id":ObjectId(user_id)})['verified_cases']
-        # rejected_cases = users_collection.find_one({"_id":ObjectId(user_id)})['rejected_cases']
         total_cases = len(assigned_cases)
         notifications = registrar.get("notifications", [])
         return {
             "name": registrar.get("name", "Registrar"),
-            # "designation": registrar.get("designation", "Registrar"),
-            # "court": registrar.get("court", "Unknown Court"),
             "total_cases": total_cases,
-            # "verified_cases": verified_cases,
-            # "rejected_cases": rejected_cases,
             "notifications": len(notifications)
         }
 
@@ -262,6 +239,23 @@ async def registrar_dashboard(user_id: str):
         raise HTTPException(status_code=400, detail=f"Error fetching registrar data: {str(e)}")
 
 
+
+@app.get("/get-cases-registrar/{user_id}")
+async def get_cases(user_id: str):
+    print(f"Received user_id: {user_id}")
+    if not ObjectId.is_valid(user_id):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    user = users_collection.find_one({'_id': ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    case_ids = user.get('cases', [])
+    object_ids = [ObjectId(c) if ObjectId.is_valid(c) else c for c in case_ids]
+    cursor = case_collection.find({"_id": {"$in": object_ids}})
+    case_docs = list(cursor)
+    for c in case_docs:
+        c["_id"] = str(c["_id"])
+
+    return {"cases": case_docs}
 
 
 
@@ -313,31 +307,20 @@ async def case_reject(case_id: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Error rejecting case: {str(e)}")
 
 
-@app.get('/lawyer/notifs/{lawyer_id}')
-async def get_notifications(lawyer_id: str):
-    try:
-        print(f"Fetching notifications for lawyer: {lawyer_id}")  # Debug log
-        notifications = list(lawyer_notification.find({}))
-        print(f"Raw notifications from DB: {notifications}")  # Debug log
-        
-        if not notifications:
-            print("No notifications found in DB for this lawyer")
-            return {"notifications": []}
-            
-        formatted_notifications = []
-        for notification in notifications:
-            formatted_notifications.append({
-                "case_id": notification.get("case_id", ""),
-                "message": notification.get("message", ""),
-                "timestamp": notification.get("timestamp", datetime.utcnow()).strftime('%Y-%m-%d %H:%M:%S')
-            })
-        
-        print(f"Formatted notifications: {formatted_notifications}")  # Debug log
-        return {"notifications": formatted_notifications}
-        
-    except Exception as e:
-        print(f"Error in endpoint: {str(e)}")  # Debug log
-        raise HTTPException(status_code=400, detail=f"Error fetching notifications: {str(e)}")
+
+@app.get('/notification/{uid}')
+async def get_notifications(uid: str):
+    uid = ObjectId(uid)
+    print(uid)
+    user = users_collection.find_one({"_id": uid})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    notifications = user.get("notifications", [])
+    return {"user_id": str(uid), "notifications": notifications}
+
+
+  
+    
     
 @app.post('/registrar/case-assignment/{case_id}')
 async def send_to_stamp_reporter(case_id: str):

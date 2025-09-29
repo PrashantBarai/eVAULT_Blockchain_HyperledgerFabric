@@ -67,10 +67,10 @@ const CaseDetails = () => {
   // Handle sending the case to the registrar
   const handleSendToRegistrar = async () => {
     try {
-      const token = localStorage.getItem('token');
+      // const token = localStorage.getItem('token');
       const userString = localStorage.getItem('user_data');
       
-      if (!token || !userString) {
+      if (!userString) {
         throw new Error('Authentication required');
       }
   
@@ -82,7 +82,7 @@ const CaseDetails = () => {
         { user_id: userId }, // Include user_id in the request body
         {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            // 'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         }

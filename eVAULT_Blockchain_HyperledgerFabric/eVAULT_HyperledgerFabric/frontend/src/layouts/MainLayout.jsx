@@ -10,7 +10,7 @@ const MainLayout = () => {
   
   const isRegistrarSection = location.pathname.startsWith('/registrar');
   const userTitle = isRegistrarSection ? 'Court Registrar' : 'Adv.';
-  const userName = isRegistrarSection ? 'Sarah Wilson' : 'John Doe';
+  const userName = isRegistrarSection ? '' : '';
   const userInitial = userName.charAt(0);
   const avatarColor = isRegistrarSection ? '#1a237e' : '#d32f2f';
 

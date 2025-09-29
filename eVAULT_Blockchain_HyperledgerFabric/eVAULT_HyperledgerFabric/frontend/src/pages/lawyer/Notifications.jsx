@@ -25,18 +25,19 @@ const Notifications = () => {
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('You must be logged in to view notifications.');
+        // const token = localStorage.getItem('token');
+        // if (!token) throw new Error('You must be logged in to view notifications.');
         
         const user_data = localStorage.getItem('user_data');
-        const lawyer_id = JSON.parse(user_data).user_id;
+        const lawyer_id = JSON.parse(user_data)._id;
+        console.log(user_data)
         if (!lawyer_id) throw new Error('Lawyer ID not found.');
   
-        console.log('Making request to:', `http://localhost:8000/lawyer/notifs/${lawyer_id}`);
+        console.log('Making request to:', `http://localhost:8000/notification/${lawyer_id}`);
         
-        const response = await axios.get(`http://localhost:8000/lawyer/notifs/${lawyer_id}`, {
+        const response = await axios.get(`http://localhost:8000/notification/${lawyer_id}`, {
           headers: { 
-            Authorization: `Bearer ${token}`,
+            // Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
         });
