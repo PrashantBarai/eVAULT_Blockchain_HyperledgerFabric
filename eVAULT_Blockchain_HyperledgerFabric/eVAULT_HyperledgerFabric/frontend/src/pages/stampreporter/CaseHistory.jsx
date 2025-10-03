@@ -34,17 +34,17 @@ const CaseHistory = () => {
   useEffect(() => {
     const fetchVerifiedCases = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('You must be logged in to view cases.');
+        // const token = localStorage.getItem('token');
+        // if (!token) throw new Error('You must be logged in to view cases.');
 
         const userString = localStorage.getItem('user_data');
         if (!userString) throw new Error('User data not found.');
 
         const user = JSON.parse(userString);
-        const userId = user.user_id;
+        const userId = user._id;
 
-        const response = await axios.get(`http://localhost:8000/all-cases/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const response = await axios.get(`http://localhost:8000/all-sr-cases/${userId}`, {
+          // headers: { Authorization: `Bearer ${token}` }, 
         });
         console.log(response);
         if (response.status !== 200) throw new Error('Failed to fetch verified cases.');

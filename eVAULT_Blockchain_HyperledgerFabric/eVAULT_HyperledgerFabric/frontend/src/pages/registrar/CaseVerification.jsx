@@ -48,11 +48,11 @@ const CaseVerification = () => {
   useEffect(() => {
     const fetchCaseDetails = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('You must be logged in to view case details.');
+        // const token = localStorage.getItem('token');
+        // if (!token) throw new Error('You must be logged in to view case details.');
 
         const response = await axios.get(`http://localhost:8000/registrar/case-verification/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          // headers: { Authorization: `Bearer ${token}` },
         });
 
         if (response.data && response.data.case) {
@@ -73,8 +73,8 @@ const CaseVerification = () => {
   const handleApprove = async () => {
     if (selectedDepartment) {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('You must be logged in to approve cases.');
+        // const token = localStorage.getItem('token');
+        // if (!token) throw new Error('You must be logged in to approve cases.');
   
         const requestData = { department: selectedDepartment };
         console.log("Sending request to API:", requestData);  // Debugging log
@@ -82,7 +82,7 @@ const CaseVerification = () => {
         const response = await axios.post(
           `http://localhost:8000/registrar/case-assignment/${id}`, 
           requestData,
-          { headers: { Authorization: `Bearer ${token}` } }
+          // { headers: { Authorization: `Bearer ${token}` } }
         );
   
         console.log("Response:", response.data);  // Debugging log

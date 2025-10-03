@@ -114,8 +114,8 @@ async def submit_case(
             "uid_party1": uid_party1,
             "uid_party2": uid_party2,
             "filed_date": filed_date_parsed,
-            "associated_lawyers": associated_lawyers,
-            "associated_judge": associated_judge,
+            # "associated_lawyers": associated_lawyers,
+            # "associated_judge": associated_judge,
             "case_subject": case_subject,
             "latest_update": latest_update,
             "status": status,
@@ -258,6 +258,23 @@ async def get_cases(user_id: str):
     return {"cases": case_docs}
 
 
+@app.get("/get-cases-stampreporter/{user_id}")
+async def get_cases(user_id: str):
+    print(f"Received user_id: {user_id}")
+    if not ObjectId.is_valid(user_id):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    user = users_collection.find_one({'_id': ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    case_ids = user.get('cases', [])
+    object_ids = [ObjectId(c) if ObjectId.is_valid(c) else c for c in case_ids]
+    cursor = case_collection.find({"_id": {"$in": object_ids}})
+    case_docs = list(cursor)
+    for c in case_docs:
+        c["_id"] = str(c["_id"])
+
+    return {"cases": case_docs}
+
 
 @app.get('/registrar/case-verification/{case_id}')
 async def case_verification(case_id: str):
@@ -321,33 +338,33 @@ async def get_notifications(uid: str):
 
   
     
-    
+    from fastapi import HTTPException
+from bson import ObjectId
+import random  # add this import
+
 @app.post('/registrar/case-assignment/{case_id}')
 async def send_to_stamp_reporter(case_id: str):
     print(case_id)
     try:
+        # fetch the case
         case = case_collection.find_one({"_id": ObjectId(case_id)})
         print(case)
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
-        registrar = users_collection.find_one({"_id": ObjectId(case.get("assigned_registrar"))})
-        if not registrar:
-            raise HTTPException(status_code=404, detail="Registrar not found")
-        stamp_reporters = list(users_collection.find({"user_type": "stamp-reporter"}))
-        if not stamp_reporters:  
+
+        # fetch all stamp reporters
+        stamp_reporters = list(users_collection.find({"user_type": "stampreporter"}))
+        if not stamp_reporters:
             raise HTTPException(status_code=400, detail="No stamp reporters found")
-        stamp_reporters.sort(key=lambda sr: len(sr.get("cases", [])))
-        assigned_reporter = stamp_reporters[0]
+
+        # randomly pick one
+        assigned_reporter = random.choice(stamp_reporters)
         reporter_id = assigned_reporter["_id"]
 
+        # update the chosen reporter's cases (add case_id if not already there)
         users_collection.update_one(
             {"_id": reporter_id},
             {"$addToSet": {"cases": case_id}}  # Ensures uniqueness
-        )
-
-        case_collection.update_one(
-            {"_id": ObjectId(case_id)},
-            {"$set": {"assigned_stamp_reporter": str(reporter_id)}}
         )
 
         return {
@@ -466,6 +483,7 @@ async def accept_case(case_id: str, request: Request):
     
     
     
+    
 @app.get("/all-cases/{user_id}")
 async def get_all_cases(user_id: str):
     try:
@@ -474,6 +492,30 @@ async def get_all_cases(user_id: str):
             raise HTTPException(status_code=404, detail="User not found")
 
         case_ids = user.get("verified_cases", []) + user.get("rejected_cases", [])
+        all_cases = list(case_collection.find({"_id": {"$in": [ObjectId(case_id) for case_id in case_ids]}}))
+
+        for case in all_cases:
+            case["_id"] = str(case["_id"])
+            case['filed_date'] = case['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
+            case['assigned_registrar'] = str(case.get('assigned_registrar', ''))
+
+        return {"cases": all_cases}
+    except Exception as e:
+        print(f"Error fetching all cases: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+    
+    
+    
+
+@app.get("/all-sr-cases/{user_id}")
+async def get_all_cases(user_id: str):
+    try:
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        case_ids = user.get("cases", []) 
         all_cases = list(case_collection.find({"_id": {"$in": [ObjectId(case_id) for case_id in case_ids]}}))
 
         for case in all_cases:

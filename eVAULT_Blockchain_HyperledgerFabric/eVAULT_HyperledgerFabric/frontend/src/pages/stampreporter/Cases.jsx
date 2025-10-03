@@ -30,18 +30,18 @@ const Cases = () => {
   useEffect(() => {
     const fetchCases = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('You must be logged in to view cases.');
+        // const token = localStorage.getItem('token');
+        // if (!token) throw new Error('You must be logged in to view cases.');
 
         const userString = localStorage.getItem('user_data');
         if (!userString) throw new Error('User data not found.');
 
         const user = JSON.parse(userString);
-        const userId = user.user_id;
+        const userId = user._id;
 
-        const response = await fetch(`http://localhost:8000/get-cases/${userId}`, {
+        const response = await fetch(`http://localhost:8000/get-cases-stampreporter/${userId}`, {
           method: 'GET',
-          headers: { Authorization: `Bearer ${token}` },
+          // headers: { Authorization: `Bearer ${token}` },
         });
 
         if (!response.ok) throw new Error('Failed to fetch cases.');
