@@ -45,12 +45,12 @@ const CaseManagement = ({ userId }) => {
   useEffect(() => {
     const fetchCases = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-          setError('You must be logged in to view cases.');
-          setLoading(false);
-          return;
-        }
+        // const token = localStorage.getItem('token');
+        // if (!token) {
+        //   setError('You must be logged in to view cases.');
+        //   setLoading(false);
+        //   return;
+        // }
 
         const userString = localStorage.getItem('user_data');
         if (!userString) {
@@ -60,7 +60,7 @@ const CaseManagement = ({ userId }) => {
         }
 
         const user = JSON.parse(userString);
-        const userIdToUse = userId || user.user_id;
+        const userIdToUse = userId || user._id;
         if (!userIdToUse) {
           setError('User ID is missing.');
           setLoading(false);
@@ -69,7 +69,7 @@ const CaseManagement = ({ userId }) => {
 
         const response = await fetch(`http://localhost:8000/get-cases/${userIdToUse}`, {
           method: 'GET',
-          headers: { Authorization: `Bearer ${token}` },
+          // headers: { Authorization: `Bearer ${token}` },
         });
 
         if (!response.ok) {
@@ -99,12 +99,12 @@ const CaseManagement = ({ userId }) => {
     
     try {
       setForwarding(true);
-      const token = localStorage.getItem('token');
+      // const token = localStorage.getItem('token');
       
       const response = await fetch(`http://localhost:8000/case/${caseId}/send-to-judge`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          // 'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });

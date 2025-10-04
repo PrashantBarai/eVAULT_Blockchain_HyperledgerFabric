@@ -20,7 +20,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:7000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -64,9 +64,10 @@ async def signup(
         "phone_number": phone_number,
         "address": address, 
         "notifications":[],
+        "cases": [],
     }
-    if user_type=="registrar":
-        data['cases'] = []
+    if user_type=="stampreporter":
+        data['digital_sign']=str(uuid.uuid1())
     users_collection.insert_one(data)
     
     return {"message": "Signup data received"}
@@ -127,10 +128,16 @@ async def submit_case(
             "rejected": {"status": False, "reason": ""},
             "file_cids": []
         }
-        print(case_data)
+        # print(case_data)
+        if files:
+            file_cids = await upload_files_to_ipfs(files)
+            case_data["file_cids"] = file_cids
+
+        # insert case record
         case_result = case_collection.insert_one(case_data)
         case_id = str(case_result.inserted_id)
-        
+
+        # update user pending cases
         users_collection.update_one(
             {'_id': ObjectId(user_id), "user_type": "lawyer"},
             {'$inc': {'pending_cases': 1}}
@@ -141,12 +148,15 @@ async def submit_case(
         return {
             "message": "Case submitted successfully",
             "case_id": case_id,
-            "user": {"user_id": user_id, "pending_cases": user['pending_cases']}
+            "user": {"user_id": user_id, "pending_cases": user['pending_cases']},
+            "file_cids": case_data["file_cids"]
         }
-    
+
     except Exception as e:
         print("Error:", e)
         raise HTTPException(status_code=400, detail=f"Error submitting case: {str(e)}")
+
+
 
 
 
@@ -163,6 +173,9 @@ async def get_cases(user_id: str):
         c["_id"] = str(c["_id"])
         c['filed_date'] = c['filed_date'].strftime('%Y-%m-%d %H:%M:%S')
         c['assigned_registrar'] = str(c.get('assigned_registrar', ''))
+        c['assigned_stamp_reporter'] = str(c.get('assigned_stamp_reporter', ''))
+
+    # print(cases)
     return {"cases": cases}
 
 
@@ -237,24 +250,55 @@ async def registrar_dashboard(user_id: str):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching registrar data: {str(e)}")
+from bson import ObjectId
+
+def convert_objectids(doc):
+    if isinstance(doc, dict):
+        return {k: convert_objectids(v) for k, v in doc.items()}
+    elif isinstance(doc, list):
+        return [convert_objectids(i) for i in doc]
+    elif isinstance(doc, ObjectId):
+        return str(doc)
+    else:
+        return doc
 
 
+from bson import ObjectId
+from fastapi import HTTPException
 
 @app.get("/get-cases-registrar/{user_id}")
 async def get_cases(user_id: str):
     print(f"Received user_id: {user_id}")
+
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user_id")
+
     user = users_collection.find_one({'_id': ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    case_ids = user.get('cases', [])
-    object_ids = [ObjectId(c) if ObjectId.is_valid(c) else c for c in case_ids]
-    cursor = case_collection.find({"_id": {"$in": object_ids}})
-    case_docs = list(cursor)
-    for c in case_docs:
-        c["_id"] = str(c["_id"])
 
+    case_ids = user.get('cases', [])
+    object_ids = [ObjectId(c) for c in case_ids if ObjectId.is_valid(c)]
+    
+    # Fetch cases
+    cursor = case_collection.find({"_id": {"$in": object_ids}})
+    case_docs = []
+    
+    for c in cursor:
+        # Convert all ObjectId fields in the document to strings
+        def convert_objectid(doc):
+            for key, value in doc.items():
+                if isinstance(value, ObjectId):
+                    doc[key] = str(value)
+                elif isinstance(value, dict):
+                    doc[key] = convert_objectid(value)
+                elif isinstance(value, list):
+                    doc[key] = [str(v) if isinstance(v, ObjectId) else v for v in value]
+            return doc
+        
+        case_docs.append(convert_objectid(c))
+
+    print(case_docs)
     return {"cases": case_docs}
 
 
@@ -263,26 +307,52 @@ async def get_cases(user_id: str):
     print(f"Received user_id: {user_id}")
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail="Invalid user_id")
+    
     user = users_collection.find_one({'_id': ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
     case_ids = user.get('cases', [])
-    object_ids = [ObjectId(c) if ObjectId.is_valid(c) else c for c in case_ids]
+    print(case_ids)
+    
+    object_ids = [ObjectId(c) for c in case_ids]
     cursor = case_collection.find({"_id": {"$in": object_ids}})
-    case_docs = list(cursor)
-    for c in case_docs:
-        c["_id"] = str(c["_id"])
-
+    
+    case_docs = [convert_objectids(c) for c in cursor]
+    
+    print(case_docs)
     return {"cases": case_docs}
 
 
+from bson import ObjectId
+from fastapi import HTTPException
+
+def convert_objectid(doc):
+    """
+    Recursively convert ObjectId fields to string in a dictionary or list.
+    """
+    if isinstance(doc, dict):
+        for key, value in doc.items():
+            if isinstance(value, ObjectId):
+                doc[key] = str(value)
+            elif isinstance(value, (dict, list)):
+                doc[key] = convert_objectid(value)
+    elif isinstance(doc, list):
+        doc = [convert_objectid(item) for item in doc]
+    return doc
+
 @app.get('/registrar/case-verification/{case_id}')
 async def case_verification(case_id: str):
+    if not ObjectId.is_valid(case_id):
+        raise HTTPException(status_code=400, detail="Invalid case_id")
+
     case1 = case_collection.find_one({"_id": ObjectId(case_id)})
-    print(case1)
-    if not case1:raise HTTPException(status_code=404, detail="Case not found")
-    case1["_id"] = str(case1["_id"])
+    if not case1:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    case1 = convert_objectid(case1)
     return {"case": case1}
+
 
 
 @app.post("/case/{case_id}/reject")
@@ -367,6 +437,12 @@ async def send_to_stamp_reporter(case_id: str):
             {"$addToSet": {"cases": case_id}}  # Ensures uniqueness
         )
 
+        # **update the case to reflect the assigned reporter**
+        case_collection.update_one(
+            {"_id": ObjectId(case_id)},
+            {"$set": {"assigned_stamp_reporter": reporter_id}}
+        )
+
         return {
             "message": "Case assigned to stamp reporter successfully",
             "case_id": case_id,
@@ -379,9 +455,9 @@ async def send_to_stamp_reporter(case_id: str):
 
 # Stamp Reporter
 
+
 class CaseStampVerifyRequest(BaseModel):
     user_id: str
-
 
 @app.post('/case-stamp-verif/{case_id}')
 async def case_stamp_verif(case_id: str, request: CaseStampVerifyRequest):
@@ -424,6 +500,8 @@ async def case_stamp_verif(case_id: str, request: CaseStampVerifyRequest):
         raise HTTPException(status_code=500, detail=f"Error fetching case: {str(e)}")
 
 
+
+
 @app.post("/case/{case_id}/accept")
 async def accept_case(case_id: str, request: Request):
     try:
@@ -432,6 +510,7 @@ async def accept_case(case_id: str, request: Request):
             raise HTTPException(status_code=404, detail="Case not found")
         
         data = await request.json()
+        print(data)
         digital_signature = data.get("digital_signature")
         if not digital_signature:
             raise HTTPException(status_code=400, detail="Digital signature is required")
@@ -440,6 +519,9 @@ async def accept_case(case_id: str, request: Request):
         if not stamp_reporter:
             raise HTTPException(status_code=404, detail="Stamp reporter not found")
         
+        print(digital_signature)
+
+        print(stamp_reporter.get("digital_sign"))
         if digital_signature != stamp_reporter.get("digital_sign"):
             raise HTTPException(status_code=400, detail="Invalid digital signature")
         
@@ -454,29 +536,26 @@ async def accept_case(case_id: str, request: Request):
             {"_id": ObjectId(stamp_reporter["_id"])},
             {"$addToSet": {"verified_cases": case_id}}
         )
-        
-        # Find bench clerk and update
-        bench_clerk = users_collection.find_one({"user_type": "bench-clerk"}, sort=[("cases", 1)])
-        notification_data = {
-            "case_id": case_id,
-            "message": f"Case '{case1['case_subject']}' (ID: {case_id}) has been verified by the stamp reporter.",
-            "timestamp": datetime.now(),
-            "lawyer_id": case1["user_id"]
-        }
-        
-        if bench_clerk:
-            # Corrected update operation - combine both updates in one command
-            users_collection.update_one(
-                {"_id": bench_clerk["_id"]},
-                {
-                    "$addToSet": {
-                        "cases": case_id,
-                        "notifications": notification_data
-                    }
-                }
-            )
-        
-        lawyer_notification.insert_one(notification_data)
+                
+        bench_clerks = list(users_collection.find({"user_type": "benchclerk"}))
+        if not bench_clerks:
+            raise HTTPException(status_code=400, detail="No bench clerks found")
+
+        # randomly select one
+        assigned_clerk = random.choice(bench_clerks)
+        clerk_id = assigned_clerk["_id"]
+
+        # update the chosen bench clerk's cases
+        users_collection.update_one(
+            {"_id": clerk_id},
+            {"$addToSet": {"cases": case_id}}  # add case_id if not already present
+        )
+
+        # update the case with assigned bench clerk
+        case_collection.update_one(
+            {"_id": ObjectId(case_id)},
+            {"$set": {"assigned_bench_clerk": clerk_id}}
+        )
         return {"message": "Case accepted and verified successfully", "case_id": case_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error accepting case: {str(e)}")
@@ -526,7 +605,10 @@ async def get_all_cases(user_id: str):
         return {"cases": all_cases}
     except Exception as e:
         print(f"Error fetching all cases: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500,detail="Internal server error")
+    
+    
+    
     
 @app.get('/benchclerk/notifs/{bench_id}')
 async def bench_notif(bench_id: str):

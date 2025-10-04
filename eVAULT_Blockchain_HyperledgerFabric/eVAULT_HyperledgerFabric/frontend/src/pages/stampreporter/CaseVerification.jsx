@@ -68,20 +68,20 @@ const CaseVerification = () => {
     const fetchCaseDetails = async () => {
       try {
         setLoading(true);
-        const token = localStorage.getItem('token');
+        // const token = localStorage.getItem('token');
         const user = JSON.parse(localStorage.getItem('user_data'));
         
-        if (!token || !user) {
-          throw new Error('Authentication required');
-        }
+        // if (!token || !user) {
+        //   throw new Error('Authentication required');
+        // }
 
         const response = await fetch(`http://localhost:8000/case-stamp-verif/${id}`, {
           method: 'POST',
           headers: {
-            "Authorization": `Bearer ${token}`,
+            // "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ user_id: user.user_id })
+          body: JSON.stringify({ user_id: user._id })
         });
 
         if (!response.ok) {
@@ -104,13 +104,13 @@ const CaseVerification = () => {
   const handleApprove = async () => {
     try {
       setActionLoading(true);
-      const token = localStorage.getItem("token");
+      // const token = localStorage.getItem("token");
       
       const response = await fetch(`http://localhost:8000/case/${id}/accept`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          // Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ digital_signature: digitalSignature }),
       });
@@ -132,13 +132,13 @@ const CaseVerification = () => {
   const handleReject = async () => {
     try {
       setActionLoading(true);
-      const token = localStorage.getItem("token");
+      // const token = localStorage.getItem("token");
       
       const response = await fetch(`http://localhost:8000/case/${id}/reject`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          // Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ reason: rejectReason }),
       });

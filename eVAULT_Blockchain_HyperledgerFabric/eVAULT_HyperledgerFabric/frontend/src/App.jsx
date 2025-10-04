@@ -24,7 +24,7 @@ import BenchClerkJudgeDecisionConfirmation from './pages/benchclerk/JudgeDecisio
 import BenchClerkCaseStatusTracking from './pages/benchclerk/CaseStatusTracking';
 import BenchClerkNotifications from './pages/benchclerk/Notifications';
 import BenchClerkProfile from './pages/benchclerk/Profile';
-import BenchClerkLogin from './pages/benchclerk/Login';
+// import BenchClerkLogin from './pages/benchclerk/Login';
 
 // Registrar Pages
 import RegistrarDashboard from './pages/registrar/Dashboard';
@@ -33,7 +33,7 @@ import RegistrarCaseVerification from './pages/registrar/CaseVerification';
 import RegistrarCaseHistory from './pages/registrar/CaseHistory';
 import RegistrarNotifications from './pages/registrar/Notifications';
 import RegistrarProfile from './pages/registrar/Profile';
-import RegistrarLogin from './pages/registrar/Login';
+// import RegistrarLogin from './pages/registrar/Login';
 
 // Stamp Reporter Pages
 import StampReporterDashboard from './pages/stampreporter/Dashboard';
@@ -42,7 +42,7 @@ import StampReporterCaseVerification from './pages/stampreporter/CaseVerificatio
 import StampReporterCaseHistory from './pages/stampreporter/CaseHistory';
 import StampReporterNotifications from './pages/stampreporter/Notifications';
 import StampReporterProfile from './pages/stampreporter/Profile';
-import StampReporterLogin from './pages/stampreporter/Login';
+// import StampReporterLogin from './pages/stampreporter/Login';
 
 // Judge Pages
 import JudgeDashboard from './pages/judge/Dashboard';
@@ -50,7 +50,7 @@ import JudgeCaseReview from './pages/judge/CaseReview';
 import JudgeCaseStatus from './pages/judge/CaseStatus';
 import JudgeNotifications from './pages/judge/Notifications';
 import JudgeProfile from './pages/judge/Profile';
-import JudgeLogin from './pages/judge/Login';
+// import JudgeLogin from './pages/judge/Login';
 
 import MainLayout from './layouts/MainLayout';
 
