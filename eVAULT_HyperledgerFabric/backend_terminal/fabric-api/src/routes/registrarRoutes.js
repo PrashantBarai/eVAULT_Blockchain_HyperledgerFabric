@@ -66,4 +66,11 @@ router.post('/case/fetch-from-lawyer', registrarController.fetchFromLawyerChanne
  */
 router.get('/stats', registrarController.queryStats);
 
+/**
+ * @route   POST /api/registrar/case/forward-to-stampreporter
+ * @desc    Forward case to stamp reporter channel (cross-channel)
+ * @access  Public
+ */
+router.post('/case/forward-to-stampreporter', registrarController.forwardToStampReporterChannel);
+
 module.exports = router;

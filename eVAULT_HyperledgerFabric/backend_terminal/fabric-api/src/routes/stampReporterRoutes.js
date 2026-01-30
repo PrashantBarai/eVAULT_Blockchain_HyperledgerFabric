@@ -80,4 +80,18 @@ router.post('/cases/fetch-all-pending', stampReporterController.getAllPendingCas
  */
 router.get('/stats', stampReporterController.queryStats);
 
+/**
+ * @route   POST /api/stampreporter/case/verify
+ * @desc    Verify case and sync status to lawyer channel (cross-channel)
+ * @access  Public
+ */
+router.post('/case/verify', stampReporterController.verifyCaseAndSyncToLawyer);
+
+/**
+ * @route   POST /api/stampreporter/case/reject
+ * @desc    Reject case and sync status to lawyer channel (cross-channel)
+ * @access  Public
+ */
+router.post('/case/reject', stampReporterController.rejectCaseAndSyncToLawyer);
+
 module.exports = router;

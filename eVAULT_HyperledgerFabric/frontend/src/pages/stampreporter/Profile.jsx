@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -10,6 +10,7 @@ import {
   Divider,
   IconButton,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -17,28 +18,94 @@ import {
   Cancel as CancelIcon,
   Person as PersonIcon,
 } from '@mui/icons-material';
+import axios from 'axios';
+import { getUserData } from '../../utils/auth';
 
 const Profile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [profile, setProfile] = useState({
-    name: 'Raj Kumar',
-    title: 'Senior Stamp Reporter',
-    employeeId: 'SR123456',
-    email: 'raj.kumar@courts.gov.in',
-    phone: '+91 98765 43210',
-    department: 'Mumbai High Court',
-    joinDate: '2020-01-15',
-    address: '123, Court Staff Quarters, Mumbai - 400001',
+    name: '',
+    email: '',
+    phone: '',
+    reporterId: '',
+    reportingArea: '',
+    certificationDate: '',
   });
 
   const [editedProfile, setEditedProfile] = useState(profile);
 
-  const handleSave = () => {
-    setProfile(editedProfile);
-    setIsEditing(false);
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const user = getUserData();
+        if (!user?._id) throw new Error('User data not found.');
+
+        // Fetch profile from MongoDB
+        const response = await axios.get(`http://localhost:3000/get-profile/${user._id}`);
+        
+        if (response.data) {
+          // API returns { profile: {...} }
+          const data = response.data.profile || response.data;
+          const profileData = {
+            name: data.username || data.name || '',
+            email: data.email || '',
+            phone: data.phone_number || data.phone || '',
+            reporterId: data.reporterId || '',
+            reportingArea: data.reportingArea || '',
+            certificationDate: data.certificationDate || '',
+          };
+          setProfile(profileData);
+          setEditedProfile(profileData);
+        }
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+        // Fallback to sessionStorage data
+        const user = getUserData();
+        if (user) {
+          const profileData = {
+            name: user.username || user.name || '',
+            email: user.email || '',
+            phone: user.phone_number || user.phone || '',
+            reporterId: user.reporterId || '',
+            reportingArea: user.reportingArea || '',
+            certificationDate: user.certificationDate || '',
+          };
+          setProfile(profileData);
+          setEditedProfile(profileData);
+        } else {
+          setError(err.message);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      const user = getUserData();
+      if (!user?._id) throw new Error('User not found');
+
+      // Update profile in MongoDB
+      await axios.put(`http://localhost:3000/update-profile/${user._id}`, {
+        username: editedProfile.name,
+        phone_number: editedProfile.phone,
+        reportingArea: editedProfile.reportingArea,
+      });
+
+      setProfile(editedProfile);
+      setIsEditing(false);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      setError('Failed to save profile');
+    }
   };
 
   const handleCancel = () => {
@@ -57,49 +124,65 @@ const Profile = () => {
         </Alert>
       )}
 
-      <Paper 
-        elevation={0}
-        sx={{ 
-          p: 3,
-          mb: 3,
-          background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
-          color: 'white',
-          borderRadius: 2
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-          <Avatar
-            sx={{ 
-              width: 100, 
-              height: 100,
-              bgcolor: 'white',
-              color: '#3f51b5'
-            }}
-          >
-            <PersonIcon sx={{ fontSize: 60 }} />
-          </Avatar>
-          <Box>
-            <Typography variant="h4">{profile.name}</Typography>
-            <Typography variant="subtitle1">{profile.title}</Typography>
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              Employee ID: {profile.employeeId}
-            </Typography>
-          </Box>
-          <IconButton 
-            sx={{ 
-              ml: 'auto',
-              color: 'white',
-              bgcolor: 'rgba(255, 255, 255, 0.1)',
-              '&:hover': {
-                bgcolor: 'rgba(255, 255, 255, 0.2)',
-              }
-            }}
-            onClick={() => setIsEditing(true)}
-          >
-            <EditIcon />
-          </IconButton>
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ mb: 3 }}
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+          <CircularProgress />
         </Box>
-      </Paper>
+      ) : (
+        <>
+          <Paper 
+            elevation={0}
+            sx={{ 
+              p: 3,
+              mb: 3,
+              background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
+              color: 'white',
+              borderRadius: 2
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Avatar
+                sx={{ 
+                  width: 100, 
+                  height: 100,
+                  bgcolor: 'white',
+                  color: '#3f51b5'
+                }}
+              >
+                <PersonIcon sx={{ fontSize: 60 }} />
+              </Avatar>
+              <Box>
+                <Typography variant="h4">{profile.name || 'Stamp Reporter'}</Typography>
+                <Typography variant="subtitle1">Stamp Reporter</Typography>
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  Reporter ID: {profile.reporterId || 'N/A'}
+                </Typography>
+              </Box>
+              <IconButton 
+                sx={{ 
+                  ml: 'auto',
+                  color: 'white',
+                  bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  '&:hover': {
+                    bgcolor: 'rgba(255, 255, 255, 0.2)',
+                  }
+                }}
+                onClick={() => setIsEditing(true)}
+              >
+                <EditIcon />
+              </IconButton>
+            </Box>
+          </Paper>
 
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>Personal Information</Typography>
@@ -118,10 +201,9 @@ const Profile = () => {
           <Grid item xs={12} md={6}>
             <TextField
               fullWidth
-              label="Title"
-              value={editedProfile.title}
-              onChange={(e) => setEditedProfile({ ...editedProfile, title: e.target.value })}
-              disabled={!isEditing}
+              label="Reporter ID"
+              value={editedProfile.reporterId}
+              disabled={true}
             />
           </Grid>
           <Grid item xs={12} md={6}>
@@ -129,8 +211,7 @@ const Profile = () => {
               fullWidth
               label="Email"
               value={editedProfile.email}
-              onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
-              disabled={!isEditing}
+              disabled={true}
             />
           </Grid>
           <Grid item xs={12} md={6}>
@@ -145,30 +226,18 @@ const Profile = () => {
           <Grid item xs={12} md={6}>
             <TextField
               fullWidth
-              label="Department"
-              value={editedProfile.department}
-              onChange={(e) => setEditedProfile({ ...editedProfile, department: e.target.value })}
+              label="Reporting Area"
+              value={editedProfile.reportingArea}
+              onChange={(e) => setEditedProfile({ ...editedProfile, reportingArea: e.target.value })}
               disabled={!isEditing}
             />
           </Grid>
           <Grid item xs={12} md={6}>
             <TextField
               fullWidth
-              label="Join Date"
-              value={editedProfile.joinDate}
-              onChange={(e) => setEditedProfile({ ...editedProfile, joinDate: e.target.value })}
-              disabled={!isEditing}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              label="Address"
-              value={editedProfile.address}
-              onChange={(e) => setEditedProfile({ ...editedProfile, address: e.target.value })}
-              disabled={!isEditing}
-              multiline
-              rows={2}
+              label="Certification Date"
+              value={editedProfile.certificationDate}
+              disabled={true}
             />
           </Grid>
         </Grid>
@@ -198,6 +267,8 @@ const Profile = () => {
           </Box>
         )}
       </Paper>
+        </>
+      )}
     </Box>
   );
 };

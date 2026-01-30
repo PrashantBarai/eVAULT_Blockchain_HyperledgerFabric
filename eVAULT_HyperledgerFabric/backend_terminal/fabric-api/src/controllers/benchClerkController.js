@@ -7,7 +7,12 @@ const logger = require('../utils/logger');
  */
 const benchClerkController = {
     /**
-     * Forward case to judge
+     * Forward case to judge (cross-channel invocation)
+     * Called on benchclerk-judge-channel using benchclerk chaincode
+     * The ForwardToJudge function handles:
+     * - Reading case from stampreporter-benchclerk-channel
+     * - Storing case on benchclerk-judge-channel
+     * - Assigning case to the specified judge
      */
     forwardToJudge: async (req, res) => {
         const { caseID, assignmentDetails } = req.body;
@@ -18,16 +23,19 @@ const benchClerkController = {
         let gateway;
         try {
             const fabricConfig = config.fabric.benchclerk;
+            // Connect to benchclerk-judge-channel (not stampreporter-benchclerk-channel)
+            const judgeChannelName = fabricConfig.judgeChannel || 'benchclerk-judge-channel';
+            
             const { contract, gateway: g } = await connectToNetwork(
                 fabricConfig.org, 
                 fabricConfig.user, 
-                fabricConfig.channelName, 
-                fabricConfig.chaincodeName
+                judgeChannelName,  // benchclerk-judge-channel
+                fabricConfig.chaincodeName  // benchclerk chaincode
             );
             gateway = g;
 
             await contract.submitTransaction('ForwardToJudge', caseID, JSON.stringify(assignmentDetails));
-            logger.info(`Case ${caseID} forwarded to judge successfully`);
+            logger.info(`Case ${caseID} forwarded to judge on ${judgeChannelName}`);
             
             return res.status(200).json({
                 success: true,
@@ -337,6 +345,98 @@ const benchClerkController = {
             return res.status(500).json({
                 success: false,
                 message: `Failed to get case statistics: ${error.message}`,
+            });
+        } finally {
+            await disconnectFromNetwork(gateway);
+        }
+    },
+
+    /**
+     * Forward case to lawyer (cross-channel invocation)
+     * Called on benchclerk-lawyer-channel using benchclerk chaincode
+     * The ForwardCaseToLawyer function handles:
+     * - Reading judged case from benchclerk-judge-channel
+     * - Storing case on benchclerk-lawyer-channel
+     * - Updating status to DECISION_CONFIRMED for lawyer visibility
+     */
+    forwardCaseToLawyer: async (req, res) => {
+        const { caseID } = req.body;
+        if (!caseID) {
+            return res.status(400).json({ error: 'Missing caseID in request body' });
+        }
+
+        let gateway;
+        try {
+            const fabricConfig = config.fabric.benchclerk;
+            // Connect to benchclerk-lawyer-channel (not stampreporter-benchclerk-channel)
+            const lawyerChannelName = fabricConfig.lawyerChannel || 'benchclerk-lawyer-channel';
+            
+            const { contract, gateway: g } = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                lawyerChannelName,  // benchclerk-lawyer-channel
+                fabricConfig.chaincodeName  // benchclerk chaincode
+            );
+            gateway = g;
+
+            await contract.submitTransaction('ForwardCaseToLawyer', caseID);
+            logger.info(`Case ${caseID} forwarded to lawyer on ${lawyerChannelName}`);
+            
+            return res.status(200).json({
+                success: true,
+                message: `Case ${caseID} forwarded to lawyer successfully`,
+            });
+        } catch (error) {
+            logger.error(`Error forwarding case to lawyer: ${error.message}`);
+            return res.status(500).json({
+                success: false,
+                message: `Failed to get case statistics: ${error.message}`,
+            });
+        } finally {
+            await disconnectFromNetwork(gateway);
+        }
+    },
+
+    /**
+     * Forward case to lawyer (cross-channel invocation)
+     * Called on benchclerk-lawyer-channel using benchclerk chaincode
+     * The ForwardCaseToLawyer function handles:
+     * - Reading judged case from benchclerk-judge-channel
+     * - Storing case on benchclerk-lawyer-channel
+     * - Updating status to DECISION_CONFIRMED for lawyer visibility
+     */
+    forwardCaseToLawyer: async (req, res) => {
+        const { caseID } = req.body;
+        if (!caseID) {
+            return res.status(400).json({ error: 'Missing caseID in request body' });
+        }
+
+        let gateway;
+        try {
+            const fabricConfig = config.fabric.benchclerk;
+            // Connect to benchclerk-lawyer-channel
+            const lawyerChannelName = fabricConfig.lawyerChannel || 'benchclerk-lawyer-channel';
+            
+            const { contract, gateway: g } = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                lawyerChannelName,  // benchclerk-lawyer-channel
+                fabricConfig.chaincodeName  // benchclerk chaincode
+            );
+            gateway = g;
+
+            await contract.submitTransaction('ForwardCaseToLawyer', caseID);
+            logger.info(`Case ${caseID} forwarded to lawyer on ${lawyerChannelName}`);
+            
+            return res.status(200).json({
+                success: true,
+                message: `Case ${caseID} forwarded to lawyer successfully`,
+            });
+        } catch (error) {
+            logger.error(`Error forwarding case to lawyer: ${error.message}`);
+            return res.status(500).json({
+                success: false,
+                message: `Failed to forward case to lawyer: ${error.message}`,
             });
         } finally {
             await disconnectFromNetwork(gateway);

@@ -3,6 +3,7 @@ import { AppBar, Toolbar, Typography, Button, Box, Avatar } from '@mui/material'
 import { styled } from '@mui/material/styles';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { getUserData, clearAuth } from '../utils/auth';
 
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
   zIndex: theme.zIndex.drawer + 1,
@@ -11,6 +12,11 @@ const StyledAppBar = styled(AppBar)(({ theme }) => ({
 }));
 
 const Header = () => {
+  const user = getUserData(); // Use auth utility
+  
+  console.log('User data from sessionStorage:', user);
+  console.log('Username:', user ? user.username : 'No user found');
+
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -18,19 +24,23 @@ const Header = () => {
   const isStampReporterSection = location.pathname.startsWith('/stampreporter');
 
   const getUserInfo = () => {
+    if (!user) {
+      return { name: 'Guest', role: 'Guest' };
+    }
+    
     if (isRegistrarSection) {
       return {
-        name: 'Registrar John Smith',
+        name: 'Registrar '+user.username,
         role: 'Registrar',
       };
     } else if (isStampReporterSection) {
       return {
-        name: 'Stamp Reporter Raj Kumar',
+        name: 'Stamp Reporter '+user.username,
         role: 'Stamp Reporter',
       };
     } else {
       return {
-        name: 'Adv. John Doe',
+        name: 'Adv. '+user.username,
         role: 'Lawyer',
       };
     }
@@ -39,8 +49,8 @@ const Header = () => {
   const { name } = getUserInfo();
 
   const handleLogout = () => {
-    // Will implement logout logic later
-    navigate('/login');
+    clearAuth(); // Use auth utility to clear all auth data
+    navigate('/');
   };
 
   return (

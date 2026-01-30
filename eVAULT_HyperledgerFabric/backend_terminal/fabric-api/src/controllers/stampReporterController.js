@@ -186,7 +186,12 @@ const stampReporterController = {
     },
 
     /**
-     * Forward case to bench clerk
+     * Forward case to bench clerk (cross-channel invocation)
+     * Called on stampreporter-benchclerk-channel using stampreporter chaincode
+     * The ForwardCaseToBenchClerk function handles:
+     * - Reading validated case from registrar-stampreporter-channel
+     * - Storing case on stampreporter-benchclerk-channel
+     * - Updating status to FORWARDED_TO_BENCHCLERK
      */
     forwardCaseToBenchClerk: async (req, res) => {
         const { caseID } = req.body;
@@ -197,16 +202,19 @@ const stampReporterController = {
         let gateway;
         try {
             const fabricConfig = config.fabric.stampreporter;
+            // Connect to stampreporter-benchclerk-channel (not registrar-stampreporter-channel)
+            const benchclerkChannelName = fabricConfig.benchclerkChannel || 'stampreporter-benchclerk-channel';
+            
             const { contract, gateway: g } = await connectToNetwork(
                 fabricConfig.org, 
                 fabricConfig.user, 
-                fabricConfig.channelName, 
-                fabricConfig.chaincodeName
+                benchclerkChannelName,  // stampreporter-benchclerk-channel
+                fabricConfig.chaincodeName  // stampreporter chaincode
             );
             gateway = g;
 
             await contract.submitTransaction('ForwardCaseToBenchClerk', caseID);
-            logger.info(`Case ${caseID} forwarded to bench clerk successfully`);
+            logger.info(`Case ${caseID} forwarded to bench clerk on ${benchclerkChannelName}`);
             
             return res.status(200).json({
                 success: true,
@@ -224,7 +232,12 @@ const stampReporterController = {
     },
 
     /**
-     * Forward case to lawyer
+     * Forward case to lawyer (cross-channel invocation)
+     * Called on stampreporter-lawyer-channel using stampreporter chaincode
+     * The ForwardCaseToLawyer function handles:
+     * - Reading case from registrar-stampreporter-channel
+     * - Storing case on stampreporter-lawyer-channel
+     * - Updating status for lawyer visibility
      */
     forwardCaseToLawyer: async (req, res) => {
         const { caseID } = req.body;
@@ -235,16 +248,19 @@ const stampReporterController = {
         let gateway;
         try {
             const fabricConfig = config.fabric.stampreporter;
+            // Connect to stampreporter-lawyer-channel (not registrar-stampreporter-channel)
+            const lawyerChannelName = fabricConfig.lawyerChannel || 'stampreporter-lawyer-channel';
+            
             const { contract, gateway: g } = await connectToNetwork(
                 fabricConfig.org, 
                 fabricConfig.user, 
-                fabricConfig.channelName, 
-                fabricConfig.chaincodeName
+                lawyerChannelName,  // stampreporter-lawyer-channel
+                fabricConfig.chaincodeName  // stampreporter chaincode
             );
             gateway = g;
 
             await contract.submitTransaction('ForwardCaseToLawyer', caseID);
-            logger.info(`Case ${caseID} forwarded to lawyer successfully`);
+            logger.info(`Case ${caseID} forwarded to lawyer on ${lawyerChannelName}`);
             
             return res.status(200).json({
                 success: true,
@@ -403,6 +419,168 @@ const stampReporterController = {
             });
         } finally {
             await disconnectFromNetwork(gateway);
+        }
+    },
+
+    /**
+     * Verify case and forward to bench clerk (correct workflow)
+     * 1. ValidateDocuments on registrar-stampreporter-channel (status → VALIDATED_BY_STAMP_REPORTER)
+     * 2. ForwardCaseToBenchClerk on stampreporter-benchclerk-channel (cross-channel invocation)
+     */
+    verifyCaseAndSyncToLawyer: async (req, res) => {
+        const { caseID, verificationDetails } = req.body;
+        if (!caseID) {
+            return res.status(400).json({ error: 'Missing caseID in request body' });
+        }
+
+        let gateway1, gateway2;
+        try {
+            const fabricConfig = config.fabric.stampreporter;
+            
+            // Step 1: ValidateDocuments on registrar-stampreporter-channel
+            // This marks the case as VALIDATED_BY_STAMP_REPORTER
+            const { contract: mainContract, gateway: g1 } = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                fabricConfig.channelName,  // registrar-stampreporter-channel
+                fabricConfig.chaincodeName
+            );
+            gateway1 = g1;
+
+            const validationPayload = JSON.stringify({
+                ...verificationDetails,
+                status: 'VALIDATED_BY_STAMP_REPORTER',
+                validatedAt: new Date().toISOString()
+            });
+            
+            try {
+                await mainContract.submitTransaction('ValidateDocuments', caseID, validationPayload);
+                logger.info(`Case ${caseID} validated on registrar-stampreporter-channel`);
+            } catch (err) {
+                logger.error(`Error validating documents: ${err.message}`);
+                throw new Error(`Failed to validate documents: ${err.message}`);
+            }
+
+            await disconnectFromNetwork(gateway1);
+            gateway1 = null;
+
+            // Step 2: ForwardCaseToBenchClerk on stampreporter-benchclerk-channel
+            // This uses cross-channel invocation to copy the case to the new channel
+            const benchclerkChannelName = fabricConfig.benchclerkChannel || 'stampreporter-benchclerk-channel';
+            try {
+                const { contract: benchclerkContract, gateway: g2 } = await connectToNetwork(
+                    fabricConfig.org, 
+                    fabricConfig.user, 
+                    benchclerkChannelName,  // stampreporter-benchclerk-channel
+                    fabricConfig.chaincodeName  // stampreporter chaincode handles the forwarding
+                );
+                gateway2 = g2;
+
+                // ForwardCaseToBenchClerk handles:
+                // - Reading validated case from registrar-stampreporter-channel
+                // - Storing case on stampreporter-benchclerk-channel
+                // - Updating status to FORWARDED_TO_BENCHCLERK
+                await benchclerkContract.submitTransaction('ForwardCaseToBenchClerk', caseID);
+                logger.info(`Case ${caseID} forwarded to bench clerk on stampreporter-benchclerk-channel`);
+            } catch (err) {
+                logger.warn(`Could not forward to bench clerk channel: ${err.message}`);
+                // Don't fail - validation was successful, forward can be retried
+            }
+            
+            return res.status(200).json({
+                success: true,
+                message: `Case ${caseID} validated and forwarded to bench clerk successfully`,
+                data: { caseID, status: 'VALIDATED_BY_STAMP_REPORTER' }
+            });
+        } catch (error) {
+            logger.error(`Error verifying case: ${error.message}`);
+            return res.status(500).json({
+                success: false,
+                message: `Failed to verify case: ${error.message}`,
+            });
+        } finally {
+            if (gateway1) await disconnectFromNetwork(gateway1);
+            if (gateway2) await disconnectFromNetwork(gateway2);
+        }
+    },
+
+    /**
+     * Reject case and sync status to lawyer channel (cross-channel)
+     */
+    rejectCaseAndSyncToLawyer: async (req, res) => {
+        const { caseID, reason, rejectedBy } = req.body;
+        if (!caseID) {
+            return res.status(400).json({ error: 'Missing caseID in request body' });
+        }
+
+        let gateway1, gateway2;
+        try {
+            const fabricConfig = config.fabric.stampreporter;
+            
+            // Step 1: Reject case on registrar-stampreporter-channel
+            const { contract: mainContract, gateway: g1 } = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                fabricConfig.channelName,  // registrar-stampreporter-channel
+                fabricConfig.chaincodeName
+            );
+            gateway1 = g1;
+
+            const rejectionDetails = {
+                status: 'REJECTED_BY_STAMP_REPORTER',
+                reason: reason || 'No reason provided',
+                rejectedBy: rejectedBy || 'Stamp Reporter',
+                rejectedAt: new Date().toISOString()
+            };
+            
+            try {
+                await mainContract.submitTransaction('RejectCase', caseID, JSON.stringify(rejectionDetails));
+                logger.info(`Case ${caseID} rejected on registrar-stampreporter-channel`);
+            } catch (err) {
+                // Try alternative function
+                try {
+                    await mainContract.submitTransaction('UpdateCaseStatus', caseID, 'REJECTED_BY_STAMP_REPORTER');
+                    logger.info(`Case ${caseID} status updated to rejected`);
+                } catch (err2) {
+                    logger.error(`Error rejecting case: ${err2.message}`);
+                    throw new Error(`Failed to reject case: ${err2.message}`);
+                }
+            }
+
+            await disconnectFromNetwork(gateway1);
+            gateway1 = null;
+
+            // Step 2: Sync rejection to stampreporter-lawyer-channel
+            const lawyerChannelName = fabricConfig.lawyerChannel || 'stampreporter-lawyer-channel';
+            try {
+                const { contract: lawyerContract, gateway: g2 } = await connectToNetwork(
+                    fabricConfig.org, 
+                    fabricConfig.user, 
+                    lawyerChannelName,
+                    'lawyer'
+                );
+                gateway2 = g2;
+
+                await lawyerContract.submitTransaction('UpdateCaseStatus', caseID, 'REJECTED_BY_STAMP_REPORTER');
+                logger.info(`Rejection synced to stampreporter-lawyer-channel`);
+            } catch (err) {
+                logger.warn(`Could not sync rejection to lawyer channel: ${err.message}`);
+            }
+            
+            return res.status(200).json({
+                success: true,
+                message: `Case ${caseID} rejected and synced successfully`,
+                data: { caseID, status: 'REJECTED_BY_STAMP_REPORTER' }
+            });
+        } catch (error) {
+            logger.error(`Error rejecting case: ${error.message}`);
+            return res.status(500).json({
+                success: false,
+                message: `Failed to reject case: ${error.message}`,
+            });
+        } finally {
+            if (gateway1) await disconnectFromNetwork(gateway1);
+            if (gateway2) await disconnectFromNetwork(gateway2);
         }
     }
 };

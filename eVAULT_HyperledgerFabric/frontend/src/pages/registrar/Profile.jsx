@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -8,30 +8,105 @@ import {
   Avatar,
   Grid,
   Divider,
+  CircularProgress,
 } from '@mui/material';
 import {
   Edit as EditIcon,
   Save as SaveIcon,
   Person as PersonIcon,
 } from '@mui/icons-material';
+import { getUserData } from '../../utils/auth';
+import axios from 'axios';
 
 const Profile = () => {
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const user = getUserData();
+  const userId = user?._id;
+
   const [profile, setProfile] = useState({
-    name: 'John Doe',
-    email: 'john.doe@courts.gov.in',
-    phone: '+91 98765 43210',
-    designation: 'Senior Registrar',
-    court: 'Mumbai High Court',
-    employeeId: 'REG2025001',
-    joiningDate: '2020-01-15',
-    department: 'Civil Division'
+    name: '',
+    email: '',
+    phone: '',
+    designation: '',
+    court: '',
+    employeeId: '',
+    joiningDate: '',
+    department: ''
   });
 
-  const handleSave = () => {
-    setIsEditing(false);
-    // TODO: Implement save logic
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const res = await fetch(`http://localhost:3000/get-profile/${userId}`);
+        if (!res.ok) throw new Error('Unable to load profile');
+        const data = await res.json();
+        console.log('Loaded profile:', data);
+        
+        if (data.profile) {
+          setProfile({
+            name: data.profile.name || user?.username || '',
+            email: data.profile.email || user?.email || '',
+            phone: data.profile.phone || user?.phone_number || '',
+            designation: data.profile.designation || 'Registrar',
+            court: data.profile.court || '',
+            employeeId: data.profile.registrarId || user?.registrarId || user?.licenseId || '',
+            joiningDate: data.profile.joiningDate || '',
+            department: data.profile.department || user?.department || ''
+          });
+        }
+      } catch (err) {
+        console.error('Error loading profile:', err);
+        // Fallback to user data from session
+        if (user) {
+          setProfile({
+            name: user.username || '',
+            email: user.email || '',
+            phone: user.phone_number || '',
+            designation: user.designation || 'Registrar',
+            court: '',
+            employeeId: user.registrarId || user.licenseId || '',
+            joiningDate: '',
+            department: user.department || ''
+          });
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (userId) {
+      loadProfile();
+    } else {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  const handleSave = async () => {
+    try {
+      const payload = {
+        ...profile,
+        userId: userId,
+      };
+      const res = await fetch('http://localhost:3000/lawyer/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Failed to save profile');
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+    }
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>

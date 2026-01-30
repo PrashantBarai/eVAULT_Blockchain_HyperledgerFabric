@@ -9,6 +9,10 @@ import {
   Paper,
   IconButton,
   Card,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -16,6 +20,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { getUserData, getAuthToken } from '../../utils/auth';
 
 const StyledContainer = styled(Container)(({ theme }) => ({
   padding: theme.spacing(3),
@@ -66,14 +71,15 @@ const StyledTextField = styled(TextField)(({ theme }) => ({
 
 const CaseSubmission = () => {
   const [formData, setFormData] = useState({
-    caseId: '',
     uidParty1: '',
     uidParty2: '',
     filedDate: null,
     associatedLawyers: '',
-    associatedJudge: '',
     caseSubject: '',
     latestUpdate: '',
+    client: '',
+    caseType: '',
+    description: '',
   });
   const [files, setFiles] = useState([]);
 
@@ -81,7 +87,7 @@ const CaseSubmission = () => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
@@ -94,10 +100,143 @@ const CaseSubmission = () => {
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form Data:', formData);
-    console.log('Files:', files);
+
+    // Log all form details before submission
+    console.log('Case Submission Form Data:', formData);
+    console.log('Uploaded Files:', files);
+
+    // Get user from auth utility
+    const user = getUserData();
+    if (!user) {
+      alert('Please login to submit a case');
+      return;
+    }
+    console.log(user);
+
+    // Upload files to IPFS and get CIDs
+    let documents = [];
+    if (files.length > 0) {
+      try {
+        for (const file of files) {
+          const formDataForIPFS = new FormData();
+          formDataForIPFS.append('file', file);
+          
+          // Upload to IPFS via FastAPI backend (secure - API keys hidden)
+          const ipfsResponse = await fetch('http://localhost:3000/upload-to-ipfs', {
+            method: 'POST',
+            body: formDataForIPFS,
+          });
+          
+          if (ipfsResponse.ok) {
+            const ipfsResult = await ipfsResponse.json();
+            documents.push({
+              id: `DOC_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+              type: file.type || 'application/octet-stream',
+              hash: ipfsResult.ipfsHash,
+              validated: false,
+              uploadedAt: new Date().toISOString(),
+              signatureHistory: []
+            });
+            console.log('File uploaded to IPFS via Pinata:', ipfsResult.ipfsHash);
+          } else {
+            const errorText = await ipfsResponse.text();
+            console.error('IPFS upload failed for file:', file.name, errorText);
+          }
+        }
+      } catch (ipfsError) {
+        console.error('Error uploading to IPFS:', ipfsError);
+        alert('Failed to upload files to IPFS. Creating case without documents.');
+      }
+    }
+
+    // Send as JSON instead of FormData
+    const jsonData = {
+      uid_party1: formData.uidParty1,
+      uid_party2: formData.uidParty2,
+      filed_date: formData.filedDate,
+      associated_lawyers: formData.associatedLawyers,
+      associated_judge: '',
+      case_subject: formData.caseSubject,
+      latest_update: formData.latestUpdate,
+      status: 'pending',
+      user_id: user._id,
+      user_name: user.name || user.username || 'Unknown Lawyer',
+      client: formData.client,
+      case_type: formData.caseType,
+      description: formData.description,
+      documents: documents
+    };
+    
+    console.log('Sending JSON data:', jsonData);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/lawyer/case/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(jsonData),
+      });
+      console.log(response);
+      if (!response.ok) {
+        throw new Error('Failed to create case');
+      }
+      const result = await response.json();
+      console.log('Blockchain response:', result);
+      
+      // Link the case to user in MongoDB
+      if (result.case_id) {
+        try {
+          const linkData = new FormData();
+          linkData.append('case_id', result.case_id);
+          linkData.append('user_type', user.user_type || 'lawyer');
+          linkData.append('username', user.username || user.name);
+          linkData.append('license_id', user.licenseId || user.license_id || '');
+          linkData.append('email', user.email);
+          
+          const linkResponse = await fetch('http://localhost:3000/link-case', {
+            method: 'POST',
+            body: linkData
+          });
+          
+          if (linkResponse.ok) {
+            const linkResult = await linkResponse.json();
+            console.log('Case linked to user in MongoDB:', linkResult);
+          } else {
+            console.error('Failed to link case to user');
+          }
+        } catch (linkError) {
+          console.error('Error linking case:', linkError);
+        }
+      }
+      
+      alert('Case created successfully!');
+      
+      // Reset form after successful submission
+      setFormData({
+        uidParty1: '',
+        uidParty2: '',
+        filedDate: null,
+        associatedLawyers: '',
+        caseSubject: '',
+        latestUpdate: '',
+        client: '',
+        caseType: '',
+        description: '',
+      });
+      setFiles([]);
+      
+      // Log pending cases info for debugging
+      if (result.user?.pending_cases) {
+        console.log('Updated pending cases:', result.user.pending_cases);
+      }
+    } catch (error) {
+      console.error('Error creating case:', error);
+      alert('Failed to create case. Please try again.');
+    }
   };
 
   return (
@@ -113,15 +252,6 @@ const CaseSubmission = () => {
           </Typography>
 
           <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <StyledTextField
-                fullWidth
-                label="Case ID"
-                name="caseId"
-                value={formData.caseId}
-                onChange={handleChange}
-              />
-            </Grid>
             <Grid item xs={12} md={6}>
               <StyledTextField
                 fullWidth
@@ -151,20 +281,41 @@ const CaseSubmission = () => {
               </LocalizationProvider>
             </Grid>
             <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel id="case-type-label">Case Type</InputLabel>
+                <Select
+                  labelId="case-type-label"
+                  id="case-type"
+                  name="caseType"
+                  value={formData.caseType}
+                  label="Case Type"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="civil">Civil</MenuItem>
+                  <MenuItem value="corporate">Corporate</MenuItem>
+                  <MenuItem value="family">Family</MenuItem>
+                  <MenuItem value="criminal">Criminal</MenuItem>
+                  <MenuItem value="property">Property</MenuItem>
+                  <MenuItem value="labor">Labor</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
               <StyledTextField
                 fullWidth
                 label="Associated Lawyers"
                 name="associatedLawyers"
                 value={formData.associatedLawyers}
                 onChange={handleChange}
+                helperText="Enter names separated by commas"
               />
             </Grid>
             <Grid item xs={12} md={6}>
               <StyledTextField
                 fullWidth
-                label="Associated Judge"
-                name="associatedJudge"
-                value={formData.associatedJudge}
+                label="Client"
+                name="client"
+                value={formData.client}
                 onChange={handleChange}
               />
             </Grid>
@@ -174,6 +325,17 @@ const CaseSubmission = () => {
                 label="Case Subject"
                 name="caseSubject"
                 value={formData.caseSubject}
+                onChange={handleChange}
+                multiline
+                rows={3}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <StyledTextField
+                fullWidth
+                label="Description"
+                name="description"
+                value={formData.description}
                 onChange={handleChange}
                 multiline
                 rows={3}
@@ -193,7 +355,7 @@ const CaseSubmission = () => {
 
             <Grid item xs={12}>
               <Typography variant="h6" gutterBottom sx={{ color: '#2C3E50', mt: 2 }}>
-                Uploaded Evidences
+                Uploaded Evidences (Optional)
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 (in format of .jpg, .jpeg, .png, .pdf, .mp4, .mkv, .doc, .txt)
@@ -211,7 +373,7 @@ const CaseSubmission = () => {
                 <UploadArea>
                   <CloudUploadIcon sx={{ fontSize: 48, color: '#6B5ECD', mb: 2 }} />
                   <Typography variant="h6" gutterBottom sx={{ color: '#2C3E50' }}>
-                    Drop files here or click to upload
+                    Drop files here or click to upload (Optional)
                   </Typography>
                 </UploadArea>
               </label>
@@ -257,7 +419,7 @@ const CaseSubmission = () => {
                     px: 4,
                   }}
                 >
-                  Submit Case
+                  Create Case
                 </Button>
               </Box>
             </Grid>

@@ -1,6 +1,10 @@
 const { connectToNetwork, disconnectFromNetwork } = require('../fabric/network');
 const config = require('../config/config');
 const logger = require('../utils/logger');
+const axios = require('axios');
+
+// Client backend URL for MongoDB operations
+const CLIENT_BACKEND_URL = 'http://localhost:3000';
 
 /**
  * Controller for Lawyer Contract functions
@@ -10,10 +14,63 @@ const lawyerController = {
      * Create a new case
      */
     createCase: async (req, res) => {
-        const { caseData } = req.body;
-        if (!caseData) {
-            return res.status(400).json({ error: 'Missing caseData in request body' });
+        // Debug logging
+        console.log('Request body:', req.body);
+        console.log('Content-Type:', req.headers['content-type']);
+        
+        // Handle FormData from frontend - matching actual field names
+        const {
+            uid_party1,
+            uid_party2,
+            filed_date,
+            associated_lawyers,
+            associated_judge,
+            case_subject,
+            latest_update,
+            status,
+            user_id,
+            user_name,
+            client,
+            case_type,
+            description,
+            documents
+        } = req.body;
+
+        // Validate required fields
+        if (!uid_party1 || !uid_party2 || !case_subject) {
+            return res.status(400).json({ error: 'Missing required fields: uid_party1, uid_party2, case_subject' });
         }
+
+        // Generate unique case ID and number
+        const caseId = `CASE_${Date.now()}`;
+        const caseNumber = `CN${Math.floor(Math.random() * 100000)}`;
+        const currentTimestamp = new Date().toISOString();
+        
+        // Create case data object matching chaincode structure exactly
+        const caseData = {
+            id: caseId,
+            caseNumber: caseNumber,
+            title: case_subject,
+            type: case_type || 'GENERAL',
+            description: description || '',
+            status: 'CREATED',
+            currentOrg: 'LawyersOrg',
+            uidParty1: uid_party1,
+            uidParty2: uid_party2,
+            filedDate: filed_date || currentTimestamp,
+            associatedLawyers: associated_lawyers ? [associated_lawyers] : [user_name || user_id || 'unknown'],
+            associatedJudge: associated_judge || '',
+            caseSubject: case_subject,
+            clientName: client || '',
+            department: 'Civil Court',
+            createdBy: user_name || user_id || 'unknown',
+            createdAt: currentTimestamp,
+            lastModified: currentTimestamp,
+            decision: '',
+            documents: documents || [],
+            history: [],
+            hearings: []
+        };
 
         let gateway;
         try {
@@ -27,11 +84,26 @@ const lawyerController = {
             gateway = g;
 
             await contract.submitTransaction('CreateCase', JSON.stringify(caseData));
-            logger.info(`Case created successfully`);
+            logger.info(`Case created successfully with ID: ${caseData.id}`);
+            
+            // Update user's cases array in MongoDB via client_backend
+            if (user_id) {
+                try {
+                    await axios.post(`${CLIENT_BACKEND_URL}/user/add-case`, {
+                        user_id: user_id,
+                        case_id: caseData.id
+                    });
+                    logger.info(`Added case ${caseData.id} to user ${user_id}'s cases array`);
+                } catch (mongoErr) {
+                    logger.warn(`Failed to update user's cases array: ${mongoErr.message}`);
+                    // Continue anyway - blockchain is the source of truth
+                }
+            }
             
             return res.status(200).json({
                 success: true,
                 message: 'Case created successfully',
+                case_id: caseData.id // Return the actual blockchain case ID
             });
         } catch (error) {
             logger.error(`Error creating case: ${error.message}`);
@@ -322,12 +394,28 @@ const lawyerController = {
             gateway = g;
 
             const result = await contract.evaluateTransaction('GetAllCases');
-            const cases = JSON.parse(result.toString());
+            const resultString = result.toString();
+            
+            // Handle empty result or no cases
+            let cases = [];
+            if (resultString && resultString.trim() !== '') {
+                try {
+                    cases = JSON.parse(resultString);
+                    if (!Array.isArray(cases)) {
+                        cases = [];
+                    }
+                } catch (parseError) {
+                    logger.warn(`Unable to parse cases JSON: ${parseError.message}`);
+                    cases = [];
+                }
+            }
+            
             logger.info(`Retrieved ${cases.length} cases`);
             
             return res.status(200).json({
                 success: true,
-                data: cases
+                data: cases,
+                count: cases.length
             });
         } catch (error) {
             logger.error(`Error getting all cases: ${error.message}`);

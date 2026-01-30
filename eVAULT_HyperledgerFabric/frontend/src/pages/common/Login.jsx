@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import {
   Box,
   Paper,
@@ -15,51 +16,87 @@ import {
   Alert,
   useMediaQuery,
   useTheme,
+  CircularProgress,
 } from '@mui/material';
-import {
-  LockOutlined as LockOutlinedIcon,
-} from '@mui/icons-material';
+import { LockOutlined as LockOutlinedIcon } from '@mui/icons-material';
 import { useNavigate, Link } from 'react-router-dom';
 
-const Login = () => {
+const FinalLogin = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [licenseId, setLicenseId] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  // Define role-based dashboard paths
+  const roleDashboardPaths = {
+    lawyer: '/lawyer/dashboard',
+    judge: '/judge/dashboard',
+    benchclerk: '/benchclerk/dashboard',
+    registrar: '/registrar/dashboard',
+    stampreporter: '/stampreporter/dashboard',
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
-    // Basic validation
-    if (!username || !password || !role || !licenseId) {
-      setError('All fields are required');
-      return;
-    }
+    // Log the data being sent to /login
+    console.log('Login request payload:', { email, password });
 
-    // Mock credentials for testing
-    const mockCredentials = {
-      lawyer: { username: 'lawyer', licenseId: 'L12345', password: 'password' },
-      judge: { username: 'judge', licenseId: 'J12345', password: 'password' },
-      benchclerk: { username: 'clerk', licenseId: 'BC12345', password: 'password' },
-      registrar: { username: 'registrar', licenseId: 'R12345', password: 'password' },
-      stampreporter: { username: 'reporter', licenseId: 'SR12345', password: 'password' },
-    };
+    try {
+      const formData = new FormData();
+      formData.append('email', email);
+      formData.append('password', password);
 
-    // Check credentials (in a real app, this would be an API call)
-    const roleCredentials = mockCredentials[role];
-    if (roleCredentials && 
-        username === roleCredentials.username && 
-        password === roleCredentials.password &&
-        licenseId === roleCredentials.licenseId) {
-      // Redirect to appropriate dashboard based on role
-      navigate(`/${role}/dashboard`);
-    } else {
-      setError('Invalid credentials');
+      const response = await axios.post('http://localhost:3000/login', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      const { access_token, token_type, user_data } = response.data;
+      
+      // Use user_type from the database, not the selected role from dropdown
+      const actualUserType = user_data.user_type;
+      
+      console.log('JWT Token received:', access_token);
+      console.log('User data received:', user_data);
+      console.log('Actual user type from DB:', actualUserType);
+      console.log('Selected role from dropdown:', role);
+      
+      // Verify the selected role matches the actual user type
+      if (role !== actualUserType) {
+        setError(`This account is registered as ${actualUserType}, but you selected ${role}. Please select the correct role.`);
+        setIsLoading(false);
+        return;
+      }
+
+      // Store JWT token and user data in sessionStorage
+      sessionStorage.setItem('access_token', access_token);
+      sessionStorage.setItem('token_type', token_type);
+      sessionStorage.setItem('user_data', JSON.stringify(user_data));
+      sessionStorage.setItem('user_role', actualUserType);
+
+      if (roleDashboardPaths[actualUserType]) {
+        navigate(roleDashboardPaths[actualUserType]);
+      } else {
+        navigate('/');
+      }
+    } catch (error) {
+      console.error('Login failed:', error);
+      let errorMsg = 'Login failed. Please check your credentials.';
+      if (error.response?.data?.detail) {
+        errorMsg = error.response.data.detail;
+      }
+      setError(errorMsg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -183,11 +220,11 @@ const Login = () => {
               margin="normal"
               required
               fullWidth
-              label="Username"
-              autoComplete="username"
+              label="Email"
+              autoComplete="email"
               autoFocus
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   '&:hover fieldset': {
@@ -200,24 +237,26 @@ const Login = () => {
               }}
             />
             
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              label="License ID"
-              value={licenseId}
-              onChange={(e) => setLicenseId(e.target.value)}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  '&:hover fieldset': {
-                    borderColor: '#3f51b5',
+            {['lawyer', 'judge', 'benchclerk', 'registrar', 'stampreporter'].includes(role) && (
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                label="License ID"
+                value={licenseId}
+                onChange={(e) => setLicenseId(e.target.value)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    '&:hover fieldset': {
+                      borderColor: '#3f51b5',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#3f51b5',
+                    },
                   },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#3f51b5',
-                  },
-                },
-              }}
-            />
+                }}
+              />
+            )}
             
             <TextField
               margin="normal"
@@ -244,6 +283,7 @@ const Login = () => {
               type="submit"
               fullWidth
               variant="contained"
+              disabled={isLoading}
               sx={{ 
                 mt: 3, 
                 mb: 2,
@@ -259,7 +299,11 @@ const Login = () => {
                 }
               }}
             >
-              Sign In
+              {isLoading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                'Sign In'
+              )}
             </Button>
             
             <Box sx={{ mt: 2, textAlign: 'center' }}>
@@ -290,4 +334,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default FinalLogin;

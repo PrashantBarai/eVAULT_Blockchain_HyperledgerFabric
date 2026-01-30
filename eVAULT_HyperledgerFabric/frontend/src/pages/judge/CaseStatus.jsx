@@ -1,317 +1,333 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
   Typography,
+  Tabs,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Button,
+  Chip,
   TextField,
   InputAdornment,
-  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  IconButton,
   Grid,
-  Divider,
+  CircularProgress,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  ArrowBack as ArrowBackIcon,
+  Close as CloseIcon,
+  Gavel as GavelIcon,
+  Description as DescriptionIcon,
+  AccessTime as AccessTimeIcon,
 } from '@mui/icons-material';
+import { getUserData, getAuthToken } from '../../utils/auth';
 
 const CaseStatus = () => {
+  const [tabValue, setTabValue] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCase, setSelectedCase] = useState(null);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Function to determine the color of the status chip
-  const getStatusColor = (status) => {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'warning';
-      case 'approved':
-        return 'success';
-      case 'rejected':
-        return 'error';
-      default:
-        return 'default';
-    }
+  useEffect(() => {
+    const fetchCases = async () => {
+      try {
+        const token = getAuthToken();
+        if (!token) {
+          setError('You must be logged in to view cases.');
+          setLoading(false);
+          return;
+        }
+
+        const user = getUserData();
+        if (!user) {
+          setError('User data not found.');
+          setLoading(false);
+          return;
+        }
+
+        const userIdToUse = user._id;
+        if (!userIdToUse) {
+          setError('User ID is missing.');
+          setLoading(false);
+          return;
+        }
+
+        const response = await fetch(`http://localhost:8000/get-cases/${userIdToUse}`, {
+          method: 'GET',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch cases');
+        }
+
+        const data = await response.json();
+        setCases(Array.isArray(data.cases) ? data.cases : []);
+      } catch (error) {
+        setError(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCases();
+  }, []);
+
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
   };
-
-  // Mock data
-  const cases = [
-    {
-      id: 'CASE-2025-001',
-      title: 'Property Dispute Resolution',
-      type: 'Civil',
-      lawyerName: 'Jane Smith',
-      status: 'Pending',
-      lastUpdated: '2025-03-10',
-      documents: [
-        'Property_Deed.pdf',
-        'Evidence_Photos.jpg',
-        'Witness_Statements.pdf',
-      ],
-      decision: 'Awaiting final documentation from both parties before proceeding.'
-    },
-    {
-      id: 'CASE-2025-002',
-      title: 'Contract Violation',
-      type: 'Commercial',
-      lawyerName: 'Michael Johnson',
-      status: 'Approved',
-      lastUpdated: '2025-03-08',
-      documents: [
-        'Contract.pdf',
-        'Communication_Records.pdf',
-      ],
-      decision: 'Case approved for hearing based on sufficient evidence provided.'
-    },
-    {
-      id: 'CASE-2025-003',
-      title: 'Intellectual Property Infringement',
-      type: 'Intellectual Property',
-      lawyerName: 'Robert Williams',
-      status: 'Rejected',
-      lastUpdated: '2025-03-05',
-      documents: [
-        'Patent_Documents.pdf',
-        'Infringement_Evidence.jpg',
-      ],
-      decision: 'Case rejected due to insufficient evidence of infringement.'
-    },
-  ];
 
   const handleViewCase = (caseData) => {
     setSelectedCase(caseData);
+    setOpenDialog(true);
   };
 
-  const handleBackToList = () => {
-    setSelectedCase(null);
+  const getStatusColor = (status) => {
+    if (!status) return 'default';
+    switch (status.toLowerCase()) {
+      case 'pending': return 'info';
+      case 'accepted': return 'success';
+      case 'rejected': return 'error';
+      case 'on hold': return 'warning';
+      case 'finalized': return 'primary';
+      default: return 'default';
+    }
   };
 
-  const filteredCases = cases.filter(
-    (case_) =>
-      case_.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.lawyerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.status.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filterCases = () => {
+    const statusMap = ['pending', 'accepted', 'rejected', 'on hold', 'finalized'];
+    const currentStatus = statusMap[tabValue];
+    
+    return cases.filter(case_ => {
+      const matchesSearch = 
+        case_._id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        case_.case_subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (case_.associated_lawyers?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+      
+      const matchesStatus = case_.status?.toLowerCase() === currentStatus;
+      
+      return matchesSearch && matchesStatus;
+    });
+  };
 
-  if (selectedCase) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Button 
-          startIcon={<ArrowBackIcon />} 
-          onClick={handleBackToList}
-          sx={{ mb: 3 }}
-        >
-          Back to Cases
-        </Button>
-
-        <Paper 
-          elevation={0}
-          sx={{ 
-            p: 3,
-            mb: 3,
-            background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-            color: 'white',
-            borderRadius: 2
-          }}
-        >
-          <Typography variant="h4" gutterBottom>Case Details</Typography>
-          <Typography variant="subtitle1">Case ID: {selectedCase.id}</Typography>
-        </Paper>
-
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>Case Information</Typography>
-          <Divider sx={{ my: 2 }} />
-          
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" color="textSecondary">Case Title</Typography>
-                <Typography variant="body1">{selectedCase.title}</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" color="textSecondary">Case Type</Typography>
-                <Typography variant="body1">{selectedCase.type}</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" color="textSecondary">Lawyer</Typography>
-                <Typography variant="body1">{selectedCase.lawyerName}</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" color="textSecondary">Last Updated</Typography>
-                <Typography variant="body1">{selectedCase.lastUpdated}</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" color="textSecondary">Status</Typography>
-                <Chip
-                  label={selectedCase.status}
-                  color={getStatusColor(selectedCase.status)}
-                  size="small"
-                />
-              </Box>
-            </Grid>
-          </Grid>
-        </Paper>
-
-        {selectedCase.decision && (
-          <Paper sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h6" gutterBottom>Decision</Typography>
-            <Divider sx={{ my: 2 }} />
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body1">{selectedCase.decision}</Typography>
-            </Box>
-          </Paper>
-        )}
-
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>Documents</Typography>
-          <Divider sx={{ my: 2 }} />
-          
-          <Grid container spacing={2}>
-            {selectedCase.documents.map((doc, index) => (
-              <Grid item xs={12} sm={6} key={index}>
-                <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-                  {doc.includes('.pdf') ? (
-                    <Box sx={{ 
-                      bgcolor: '#f44336', 
-                      color: 'white', 
-                      width: 40, 
-                      height: 40, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      borderRadius: 1
-                    }}>
-                      PDF
-                    </Box>
-                  ) : (
-                    <Box sx={{ 
-                      bgcolor: '#4caf50', 
-                      color: 'white', 
-                      width: 40, 
-                      height: 40, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      borderRadius: 1
-                    }}>
-                      IMG
-                    </Box>
-                  )}
-                  <Typography variant="body1">{doc}</Typography>
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
-        </Paper>
-
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'flex-end',
-          mt: 4 
-        }}>
-          <Button 
-            variant="contained" 
-            onClick={handleBackToList}
-            sx={{
-              bgcolor: '#3f51b5',
-              '&:hover': {
-                bgcolor: '#1a237e',
-              }
-            }}
-          >
-            Close
-          </Button>
-        </Box>
-      </Box>
-    );
-  }
+  const handleCloseSnackbar = () => {
+    setError(null);
+  };
 
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        Case Status
+        Case Status Tracking
       </Typography>
 
-      <TextField
-        fullWidth
-        variant="outlined"
-        placeholder="Search cases..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        sx={{ mb: 3 }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-        }}
-      />
+      {error && (
+        <Snackbar
+          open={!!error}
+          autoHideDuration={6000}
+          onClose={handleCloseSnackbar}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        >
+          <Alert onClose={handleCloseSnackbar} severity="error" sx={{ width: '100%' }}>
+            {error}
+          </Alert>
+        </Snackbar>
+      )}
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow sx={{ background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)' }}>
-              <TableCell sx={{ color: 'white' }}>Case ID</TableCell>
-              <TableCell sx={{ color: 'white' }}>Title</TableCell>
-              <TableCell sx={{ color: 'white' }}>Type</TableCell>
-              <TableCell sx={{ color: 'white' }}>Lawyer</TableCell>
-              <TableCell sx={{ color: 'white' }}>Status</TableCell>
-              <TableCell sx={{ color: 'white' }}>Last Updated</TableCell>
-              <TableCell sx={{ color: 'white' }}>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredCases.map((case_) => (
-              <TableRow key={case_.id}>
-                <TableCell>{case_.id}</TableCell>
-                <TableCell>{case_.title}</TableCell>
-                <TableCell>{case_.type}</TableCell>
-                <TableCell>{case_.lawyerName}</TableCell>
-                <TableCell>
-                  <Chip
-                    label={case_.status}
-                    color={getStatusColor(case_.status)}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>{case_.lastUpdated}</TableCell>
-                <TableCell>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => handleViewCase(case_)}
-                    sx={{ 
-                      color: '#0d47a1',
-                      borderColor: '#0d47a1',
-                      '&:hover': {
-                        borderColor: '#0d47a1',
-                        bgcolor: 'rgba(13, 71, 161, 0.1)',
-                      }
-                    }}
-                  >
-                    View Details
-                  </Button>
-                </TableCell>
+      <Box sx={{ mb: 3 }}>
+        <TextField
+          fullWidth
+          variant="outlined"
+          placeholder="Search cases..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+        />
+      </Box>
+
+      <Paper sx={{ mb: 3 }}>
+        <Tabs
+          value={tabValue}
+          onChange={handleTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{
+            '& .MuiTab-root': {
+              minWidth: 120,
+            },
+            '& .Mui-selected': {
+              color: '#1a237e !important',
+            },
+            '& .MuiTabs-indicator': {
+              backgroundColor: '#1a237e',
+            },
+          }}
+        >
+          <Tab label="Pending" />
+          <Tab label="Accepted" />
+          <Tab label="Rejected" />
+          <Tab label="On Hold" />
+          <Tab label="Finalized" />
+        </Tabs>
+      </Paper>
+
+      {loading ? (
+        <Box display="flex" justifyContent="center" sx={{ my: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)' }}>
+                <TableCell sx={{ color: 'white' }}>Case ID</TableCell>
+                <TableCell sx={{ color: 'white' }}>Title</TableCell>
+                <TableCell sx={{ color: 'white' }}>Type</TableCell>
+                <TableCell sx={{ color: 'white' }}>Status</TableCell>
+                <TableCell sx={{ color: 'white' }}>Filed Date</TableCell>
+                <TableCell sx={{ color: 'white' }}>Actions</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {filterCases().length > 0 ? (
+                filterCases().map((case_) => (
+                  <TableRow key={case_._id}>
+                    <TableCell>{case_._id}</TableCell>
+                    <TableCell>{case_.case_subject}</TableCell>
+                    <TableCell>{case_.case_type}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={case_.status || 'Pending'}
+                        color={getStatusColor(case_.status)}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {new Date(case_.filed_date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={() => handleViewCase(case_)}
+                        sx={{
+                          background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
+                        }}
+                      >
+                        View Details
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    No cases found
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {/* Case Details Dialog */}
+      <Dialog
+        open={openDialog}
+        onClose={() => setOpenDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">Case Details</Typography>
+            <IconButton onClick={() => setOpenDialog(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedCase && (
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <Typography variant="h6" gutterBottom>
+                  {selectedCase.case_subject}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph>
+                  Case ID: {selectedCase._id}
+                </Typography>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <Paper sx={{ p: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Case Information
+                  </Typography>
+                  <Typography variant="body2" paragraph>
+                    Type: {selectedCase.case_type}
+                    <br />
+                    Filed Date: {new Date(selectedCase.filed_date).toLocaleDateString()}
+                    <br />
+                    Status: {selectedCase.status || 'Pending'}
+                  </Typography>
+                </Paper>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Paper sx={{ p: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Status
+                  </Typography>
+                  <Chip
+                    label={selectedCase.status || 'Pending'}
+                    color={getStatusColor(selectedCase.status)}
+                    icon={<GavelIcon />}
+                  />
+                </Paper>
+              </Grid>
+
+              {selectedCase.case_description && (
+                <Grid item xs={12}>
+                  <Paper sx={{ p: 2 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Description
+                    </Typography>
+                    <Typography variant="body2">
+                      {selectedCase.case_description}
+                    </Typography>
+                  </Paper>
+                </Grid>
+              )}
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

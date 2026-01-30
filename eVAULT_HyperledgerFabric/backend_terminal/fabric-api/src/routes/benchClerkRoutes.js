@@ -66,4 +66,11 @@ router.post('/cases/fetch-from-judge', benchClerkController.fetchFromJudgeChanne
  */
 router.get('/stats', benchClerkController.queryStats);
 
+/**
+ * @route   POST /api/benchclerk/case/forward-to-lawyer
+ * @desc    Forward judged case to lawyer (cross-channel)
+ * @access  Public
+ */
+router.post('/case/forward-to-lawyer', benchClerkController.forwardCaseToLawyer);
+
 module.exports = router;

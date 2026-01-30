@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import {
   Box,
   Paper,
@@ -22,6 +23,7 @@ import {
   InputAdornment,
   useMediaQuery,
   useTheme,
+  CircularProgress,
 } from '@mui/material';
 import {
   PersonAddOutlined as PersonAddIcon,
@@ -36,15 +38,15 @@ const Signup = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeStep, setActiveStep] = useState(0);
-  const [role, setRole] = useState('');
+  const [user_type, setRole] = useState('');
   const [formData, setFormData] = useState({
     // Common fields
-    fullName: '',
+    username: '',
     email: '',
     licenseId: '',
     password: '',
     confirmPassword: '',
-    contactNumber: '',
+    phone_number: '',
     address: '',
     
     // Lawyer-specific fields
@@ -77,6 +79,7 @@ const Signup = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [successMessage, setSuccessMessage] = useState('');
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -101,31 +104,31 @@ const Signup = () => {
     const newErrors = {};
     
     if (step === 0) {
-      if (!role) newErrors.role = 'Please select a role';
+      if (!user_type) newErrors.user_type = 'Please select a role';
     } else if (step === 1) {
-      if (!formData.fullName) newErrors.fullName = 'Full name is required';
+      if (!formData.username) newErrors.username = 'Full name is required';
       if (!formData.email) newErrors.email = 'Email is required';
       if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
       if (!formData.licenseId) newErrors.licenseId = 'License ID is required';
       if (!formData.password) newErrors.password = 'Password is required';
       if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
       if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
-      if (!formData.contactNumber) newErrors.contactNumber = 'Contact number is required';
+      if (!formData.phone_number) newErrors.phone_number = 'Contact number is required';
     } else if (step === 2) {
       // Role-specific validation
-      if (role === 'lawyer') {
+      if (user_type === 'lawyer') {
         if (!formData.barCouncilNumber) newErrors.barCouncilNumber = 'Bar Council Number is required';
         if (!formData.practicingAreas) newErrors.practicingAreas = 'Practicing areas are required';
-      } else if (role === 'judge') {
+      } else if (user_type === 'judge') {
         if (!formData.courtAssigned) newErrors.courtAssigned = 'Court assignment is required';
         if (!formData.judgementExpertise) newErrors.judgementExpertise = 'Judgement expertise is required';
-      } else if (role === 'benchclerk') {
+      } else if (user_type === 'benchclerk') {
         if (!formData.courtSection) newErrors.courtSection = 'Court section is required';
         if (!formData.clerkId) newErrors.clerkId = 'Clerk ID is required';
-      } else if (role === 'registrar') {
+      } else if (user_type === 'registrar') {
         if (!formData.registrarId) newErrors.registrarId = 'Registrar ID is required';
         if (!formData.department) newErrors.department = 'Department is required';
-      } else if (role === 'stampreporter') {
+      } else if (user_type === 'stampreporter') {
         if (!formData.reporterId) newErrors.reporterId = 'Reporter ID is required';
         if (!formData.reportingArea) newErrors.reportingArea = 'Reporting area is required';
       }
@@ -137,8 +140,49 @@ const Signup = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleNext = () => {
+  // Check if email or licenseId already exists in database
+  const checkDuplicateCredentials = async () => {
+    try {
+      setIsCheckingDuplicate(true);
+      const response = await axios.post('http://localhost:3000/check-duplicate', {
+        email: formData.email,
+        licenseId: formData.licenseId,
+      });
+      
+      const { emailExists, licenseIdExists } = response.data;
+      const newErrors = {};
+      
+      if (emailExists) {
+        newErrors.email = 'This email is already registered. Please use a different email or login.';
+      }
+      if (licenseIdExists) {
+        newErrors.licenseId = 'This License ID is already registered. Please use a different License ID.';
+      }
+      
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(prev => ({ ...prev, ...newErrors }));
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking duplicate:', error);
+      // If check fails, allow proceeding (backend will catch duplicates on final submit)
+      return true;
+    } finally {
+      setIsCheckingDuplicate(false);
+    }
+  };
+
+  const handleNext = async () => {
     if (validateStep(activeStep)) {
+      // On step 1 (Basic Info), check for duplicate email/licenseId
+      if (activeStep === 1) {
+        const isUnique = await checkDuplicateCredentials();
+        if (!isUnique) {
+          return; // Don't proceed if duplicates found
+        }
+      }
       setActiveStep(prev => prev + 1);
     }
   };
@@ -147,24 +191,99 @@ const Signup = () => {
     setActiveStep(prev => prev - 1);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (validateStep(activeStep) && activeStep === steps.length - 1) {
-      // In a real application, this would send the data to the server
-      console.log('Form submitted:', formData);
-      console.log('Documents:', documents);
-      
-      // Show success message
-      setSuccessMessage(`Registration successful! Your ${role} account is pending approval.`);
-      
-      // Only redirect after explicit form submission
-      setTimeout(() => {
-        navigate('/');
-      }, 3000);
-    } else {
-      // If not on the final step, treat as "Next" button
-      handleNext();
+  const handleKeyDown = (e) => {
+    // Prevent form submission on Enter key for all steps except the last one
+    if (e.key === 'Enter' && activeStep !== steps.length - 1) {
+      e.preventDefault();
     }
+  };
+
+  const handleSubmit = async (e) => {
+    // Prevent default form submission if called from form event
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    console.log('handleSubmit called, activeStep:', activeStep, 'last step:', steps.length - 1);
+    
+    // Only process form submission on the last step
+    if (activeStep !== steps.length - 1) {
+      console.log('Not on last step, preventing submission');
+      return false;
+    }
+    
+    console.log('On last step, validating...');
+    if (!validateStep(activeStep)) {
+      console.log('Validation failed');
+      return false;
+    }
+    
+    console.log('Validation passed, submitting to backend...');
+    
+    // Prepare FormData to send all data including files
+    const formPayload = new FormData();
+    formPayload.append('user_type', user_type);
+    Object.entries(formData).forEach(([key, value]) => {
+      formPayload.append(key, value);
+    });
+    documents.forEach((file, idx) => {
+      formPayload.append('documents', file);
+    });
+
+    try {
+        const response = await fetch('http://localhost:3000/signup', {
+          method: 'POST',
+          body: formPayload,
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('Backend response:', result);
+          setSuccessMessage(`Registration successful! Your ${user_type} account has been created. Redirecting to login...`);
+          
+          // Clear form data
+          setFormData({
+            username: '',
+            email: '',
+            licenseId: '',
+            password: '',
+            confirmPassword: '',
+            phone_number: '',
+            address: '',
+            barCouncilNumber: '',
+            practicingAreas: '',
+            experienceYears: '',
+            courtAssigned: '',
+            judgementExpertise: '',
+            appointmentDate: '',
+            courtSection: '',
+            clerkId: '',
+            joiningDate: '',
+            registrarId: '',
+            department: '',
+            designation: '',
+            reporterId: '',
+            reportingArea: '',
+            certificationDate: '',
+          });
+          setDocuments([]);
+          setRole('');
+          
+          // Navigate to login after 2 seconds
+          setTimeout(() => {
+            console.log('Navigating to login page now');
+            navigate('/login');
+          }, 2000);
+        } else {
+          const errorData = await response.json();
+          console.error('Signup failed:', errorData);
+          alert(`Signup failed: ${errorData.detail || 'Unknown error'}`);
+        }
+      } catch (error) {
+        console.error('Signup error:', error);
+        alert('An error occurred during signup. Please try again.');
+      }
   };
 
   const steps = ['Select Role', 'Basic Information', 'Role-specific Details', 'Document Upload', 'Review & Submit'];
@@ -181,7 +300,7 @@ const Signup = () => {
       },
     };
 
-    switch (role) {
+    switch (user_type) {
       case 'lawyer':
         return (
           <>
@@ -222,6 +341,20 @@ const Signup = () => {
               error={!!errors.experienceYears}
               helperText={errors.experienceYears}
               sx={textFieldSx}
+              inputProps={{ 
+                min: 0, 
+                step: 1 
+              }}
+              onKeyDown={(e) => {
+                // Prevent form submission on Enter
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                }
+              }}
+              onWheel={(e) => {
+                // Prevent scroll from changing value
+                e.target.blur();
+              }}
             />
           </>
         );
@@ -425,14 +558,14 @@ const Signup = () => {
             fullWidth 
             margin="normal" 
             required 
-            error={!!errors.role}
+            error={!!errors.user_type}
             sx={textFieldSx}
           >
             <InputLabel id="role-select-label">Role</InputLabel>
             <Select
               labelId="role-select-label"
               id="role-select"
-              value={role}
+              value={user_type}
               label="Role"
               onChange={(e) => setRole(e.target.value)}
             >
@@ -454,11 +587,11 @@ const Signup = () => {
               required
               fullWidth
               label="Full Name"
-              name="fullName"
-              value={formData.fullName}
+              name="username"
+              value={formData.username}
               onChange={handleChange}
-              error={!!errors.fullName}
-              helperText={errors.fullName}
+              error={!!errors.username}
+              helperText={errors.username}
               sx={textFieldSx}
             />
             <TextField
@@ -526,11 +659,11 @@ const Signup = () => {
               required
               fullWidth
               label="Contact Number"
-              name="contactNumber"
-              value={formData.contactNumber}
+              name="phone_number"
+              value={formData.phone_number}
               onChange={handleChange}
-              error={!!errors.contactNumber}
-              helperText={errors.contactNumber}
+              error={!!errors.phone_number}
+              helperText={errors.phone_number}
               sx={textFieldSx}
             />
             <TextField
@@ -559,11 +692,11 @@ const Signup = () => {
               Please upload the required documents:
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {role === 'lawyer' && 'Bar Council Certificate, Government ID, Educational Certificates'}
-              {role === 'judge' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {role === 'benchclerk' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {role === 'registrar' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {role === 'stampreporter' && 'Certification, Government ID, Educational Certificates'}
+              {user_type === 'lawyer' && 'Bar Council Certificate, Government ID, Educational Certificates'}
+              {user_type === 'judge' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type=== 'benchclerk' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type=== 'registrar' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type=== 'stampreporter' && 'Certification, Government ID, Educational Certificates'}
             </Typography>
             
             <Button
@@ -619,14 +752,14 @@ const Signup = () => {
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Role:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                  {user_type.charAt(0).toUpperCase() + user_type.slice(1)}
                 </Typography>
               </Grid>
               
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Full Name:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  {formData.fullName}
+                  {formData.username}
                 </Typography>
               </Grid>
               
@@ -647,7 +780,7 @@ const Signup = () => {
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Contact Number:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  {formData.contactNumber}
+                  {formData.phone_number}
                 </Typography>
               </Grid>
               
@@ -665,7 +798,7 @@ const Signup = () => {
                 </Typography>
               </Grid>
               
-              {role === 'lawyer' && (
+              {user_type === 'lawyer' && (
                 <>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Bar Council Number:</Typography>
@@ -688,7 +821,7 @@ const Signup = () => {
                 </>
               )}
               
-              {role === 'judge' && (
+              {user_type === 'judge' && (
                 <>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Court Assigned:</Typography>
@@ -843,16 +976,19 @@ const Signup = () => {
           
           <Box 
             component="form" 
+            noValidate
             sx={{ 
               mt: 1, 
               width: '100%' 
             }} 
-            onSubmit={handleSubmit}
+            onSubmit={(e) => e.preventDefault()}
+            onKeyDown={handleKeyDown}
           >
             {getStepContent(activeStep)}
             
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
               <Button
+                type="button"
                 disabled={activeStep === 0}
                 onClick={handleBack}
                 sx={{
@@ -867,8 +1003,9 @@ const Signup = () => {
               
               {activeStep === steps.length - 1 ? (
                 <Button
-                  type="submit"
+                  type="button"
                   variant="contained"
+                  onClick={handleSubmit}
                   sx={{
                     py: 1,
                     px: 3,
@@ -886,8 +1023,10 @@ const Signup = () => {
                 </Button>
               ) : (
                 <Button
+                  type="button"
                   variant="contained"
                   onClick={handleNext}
+                  disabled={isCheckingDuplicate}
                   sx={{
                     py: 1,
                     px: 3,
@@ -901,7 +1040,14 @@ const Signup = () => {
                     }
                   }}
                 >
-                  Next
+                  {isCheckingDuplicate ? (
+                    <>
+                      <CircularProgress size={20} sx={{ color: 'white', mr: 1 }} />
+                      Checking...
+                    </>
+                  ) : (
+                    'Next'
+                  )}
                 </Button>
               )}
             </Box>
@@ -923,7 +1069,7 @@ const Signup = () => {
               }}
             >
               Already have an account?{' '}
-              <MuiLink component={Link} to="/">
+              <MuiLink component={Link} to="/login">
                 Sign In
               </MuiLink>
             </Typography>
@@ -933,5 +1079,4 @@ const Signup = () => {
     </Box>
   );
 };
-
 export default Signup;

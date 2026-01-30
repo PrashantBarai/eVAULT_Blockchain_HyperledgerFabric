@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const bodyParser = require('body-parser');
+const multer = require('multer');
 const path = require('path');
 const logger = require('./src/utils/logger');
 const config = require('./src/config/config');
@@ -12,15 +13,20 @@ const stampReporterRoutes = require('./src/routes/stampReporterRoutes');
 const benchClerkRoutes = require('./src/routes/benchClerkRoutes');
 const judgeRoutes = require('./src/routes/judgeRoutes');
 const lawyerRoutes = require('./src/routes/lawyerRoutes');
+const caRoutes = require('./src/routes/caRoutes');
 
 // Initialize Express app
 const app = express();
+
+// Configure multer for handling multipart/form-data
+const upload = multer();
 
 // Middleware
 app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(upload.none()); // For handling multipart/form-data without files
 
 // Define routes
 app.use('/api/registrar', registrarRoutes);
@@ -28,6 +34,7 @@ app.use('/api/stampreporter', stampReporterRoutes);
 app.use('/api/benchclerk', benchClerkRoutes);
 app.use('/api/judge', judgeRoutes);
 app.use('/api/lawyer', lawyerRoutes);
+app.use('/api/ca', caRoutes);
 
 // Root route
 app.get('/', (req, res) => {

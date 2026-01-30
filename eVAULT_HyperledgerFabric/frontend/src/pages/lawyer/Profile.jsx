@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Container,
@@ -15,32 +15,88 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import PhotoCamera from '@mui/icons-material/PhotoCamera';
 import SaveIcon from '@mui/icons-material/Save';
+import { getUserData } from '../../utils/auth';
 
 const Profile = () => {
+
+  // ✅ Get userId from auth utility
+  const user = getUserData();
+  const userId = user?._id; 
+  console.log(userId)
   const [isEditing, setIsEditing] = useState(false);
+
   const [profile, setProfile] = useState({
-    name: 'John Doe',
-    email: 'john.doe@lawfirm.com',
-    phone: '+91 9876543210',
-    barNumber: 'BAR123456',
-    specialization: 'Criminal Law',
-    experience: '10 years',
-    address: '123 Law Street, Mumbai, India',
-    bio: 'Experienced criminal lawyer with a track record of handling high-profile cases.',
+    name: '',
+    email: '',
+    phone: '',
+    barNumber: '',
+    specialization: '',
+    experience: '',
+    address: '',
+    bio: '',
   });
 
-  const handleSave = () => {
-    setIsEditing(false);
-    // Here you would typically make an API call to save the profile
+  // 🔥 LOAD PROFILE ON PAGE LOAD
+  useEffect(() => {
+    if (userId) {
+      loadProfile();
+    }
+  }, [userId]);
+
+  const loadProfile = async () => {
+    try {
+      const res = await fetch(`http://localhost:3000/get-profile/${userId}`);
+      if (!res.ok) throw new Error("Unable to load profile");
+
+      const data = await res.json();
+      console.log('Loaded profile data:', data);
+      if (data.profile) {
+        setProfile(data.profile);
+      }
+    } catch (err) {
+      console.error('Error loading profile:', err);
+    }
+  };
+
+  // Handle changes
+  const handleChange = (field, value) => {
+    setProfile(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  // Save profile
+  const handleSave = async () => {
+    try {
+      const payload = {
+        ...profile,
+        userId: userId,   // ← include logged-in user's id
+      };
+
+      const res = await fetch("http://localhost:3000/lawyer/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error("Failed to save profile");
+
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+    }
   };
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Card sx={{ 
-        borderRadius: 2,
-        background: 'linear-gradient(145deg, #6B5ECD11 0%, #8B7CF711 100%)',
-        mb: 4 
-      }}>
+      <Card
+        sx={{
+          borderRadius: 2,
+          background: 'linear-gradient(145deg, #6B5ECD11 0%, #8B7CF711 100%)',
+          mb: 4,
+        }}
+      >
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
             <Box sx={{ position: 'relative' }}>
@@ -51,8 +107,10 @@ const Profile = () => {
                   border: '4px solid white',
                   boxShadow: 2,
                 }}
-                src="/path-to-profile-image.jpg"
+                // src="/path-to-profile-image.jpg"
               />
+
+              {/* Only UI - No Upload */}
               <IconButton
                 sx={{
                   position: 'absolute',
@@ -66,12 +124,14 @@ const Profile = () => {
                 <PhotoCamera />
               </IconButton>
             </Box>
+
             <Box sx={{ ml: 3 }}>
               <Typography variant="h4">{profile.name}</Typography>
               <Typography variant="subtitle1" color="text.secondary">
                 {profile.specialization}
               </Typography>
             </Box>
+
             <Button
               variant="contained"
               startIcon={isEditing ? <SaveIcon /> : <EditIcon />}
@@ -80,7 +140,7 @@ const Profile = () => {
                 background: 'linear-gradient(45deg, #6B5ECD 30%, #8B7CF7 90%)',
                 color: 'white',
               }}
-              onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+              onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
             >
               {isEditing ? 'Save Changes' : 'Edit Profile'}
             </Button>
@@ -96,6 +156,7 @@ const Profile = () => {
                 value={profile.name}
                 disabled={!isEditing}
                 sx={{ mb: 2 }}
+                onChange={(e) => handleChange("name", e.target.value)}
               />
               <TextField
                 fullWidth
@@ -103,6 +164,7 @@ const Profile = () => {
                 value={profile.email}
                 disabled={!isEditing}
                 sx={{ mb: 2 }}
+                onChange={(e) => handleChange("email", e.target.value)}
               />
               <TextField
                 fullWidth
@@ -110,6 +172,7 @@ const Profile = () => {
                 value={profile.phone}
                 disabled={!isEditing}
                 sx={{ mb: 2 }}
+                onChange={(e) => handleChange("phone", e.target.value)}
               />
               <TextField
                 fullWidth
@@ -117,8 +180,10 @@ const Profile = () => {
                 value={profile.barNumber}
                 disabled={!isEditing}
                 sx={{ mb: 2 }}
+                onChange={(e) => handleChange("barNumber", e.target.value)}
               />
             </Grid>
+
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
@@ -126,6 +191,7 @@ const Profile = () => {
                 value={profile.specialization}
                 disabled={!isEditing}
                 sx={{ mb: 2 }}
+                onChange={(e) => handleChange("specialization", e.target.value)}
               />
               <TextField
                 fullWidth
@@ -133,6 +199,7 @@ const Profile = () => {
                 value={profile.experience}
                 disabled={!isEditing}
                 sx={{ mb: 2 }}
+                onChange={(e) => handleChange("experience", e.target.value)}
               />
               <TextField
                 fullWidth
@@ -140,6 +207,7 @@ const Profile = () => {
                 value={profile.address}
                 disabled={!isEditing}
                 sx={{ mb: 2 }}
+                onChange={(e) => handleChange("address", e.target.value)}
               />
               <TextField
                 fullWidth
@@ -148,6 +216,7 @@ const Profile = () => {
                 disabled={!isEditing}
                 multiline
                 rows={4}
+                onChange={(e) => handleChange("bio", e.target.value)}
               />
             </Grid>
           </Grid>
@@ -159,7 +228,7 @@ const Profile = () => {
           <Typography variant="h6" gutterBottom>
             Recent Activity
           </Typography>
-          {/* Add recent activity content here */}
+          {/* Add recent activity list */}
         </CardContent>
       </Card>
     </Container>

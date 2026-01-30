@@ -339,6 +339,69 @@ const registrarController = {
         } finally {
             await disconnectFromNetwork(gateway);
         }
+    },
+
+    /**
+     * Forward case to stamp reporter channel (cross-channel invocation)
+     * Uses the smart contract's FetchAndStoreCaseFromLawyerChannel function which handles
+     * cross-channel invocation internally via ctx.GetStub().InvokeChaincode()
+     * 
+     * The flow is:
+     * 1. Connect to registrar-stampreporter-channel
+     * 2. Call FetchAndStoreCaseFromLawyerChannel which:
+     *    a. Reads case from lawyer-registrar-channel via InvokeChaincode
+     *    b. Updates status on lawyer-registrar-channel to TRANSFERRED_TO_STAMPREPORTER
+     *    c. Stores case on registrar-stampreporter-channel
+     *    d. Calls StoreCase on stampreporter chaincode via InvokeChaincode
+     *    e. Assigns case to stamp reporter
+     */
+    forwardToStampReporterChannel: async (req, res) => {
+        const { caseID, department } = req.body;
+        if (!caseID) {
+            return res.status(400).json({ error: 'Missing caseID in request body' });
+        }
+
+        let gateway;
+        try {
+            const fabricConfig = config.fabric.registrar;
+            const forwardChannelName = fabricConfig.forwardChannel || 'registrar-stampreporter-channel';
+            
+            // Connect to registrar-stampreporter-channel using registrar chaincode
+            // The registrar chaincode handles the cross-channel invocation internally
+            const { contract, gateway: g } = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                forwardChannelName,  // registrar-stampreporter-channel
+                fabricConfig.chaincodeName  // registrar chaincode (has FetchAndStoreCaseFromLawyerChannel)
+            );
+            gateway = g;
+
+            logger.info(`Calling FetchAndStoreCaseFromLawyerChannel for case ${caseID}`);
+            
+            // This function handles:
+            // - Reading from lawyer-registrar-channel
+            // - Updating status on lawyer-registrar-channel
+            // - Storing on registrar-stampreporter-channel
+            // - Syncing to stampreporter chaincode via StoreCase
+            // - Assigning to stamp reporter
+            await contract.submitTransaction('FetchAndStoreCaseFromLawyerChannel', caseID);
+            
+            logger.info(`Case ${caseID} successfully forwarded to stamp reporter channel`);
+            
+            return res.status(200).json({
+                success: true,
+                message: `Case ${caseID} forwarded to stamp reporter channel successfully`,
+                data: { caseID, channel: forwardChannelName }
+            });
+        } catch (error) {
+            logger.error(`Error forwarding case to stamp reporter channel: ${error.message}`);
+            return res.status(500).json({
+                success: false,
+                message: `Failed to forward case to stamp reporter channel: ${error.message}`,
+            });
+        } finally {
+            if (gateway) await disconnectFromNetwork(gateway);
+        }
     }
 };
 
