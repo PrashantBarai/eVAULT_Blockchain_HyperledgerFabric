@@ -69,25 +69,27 @@ const Notifications = () => {
         }
 
         // Also get user notifications from MongoDB
-        try {
-          const notifResponse = await axios.get(`http://localhost:3000/notification/${user._id}`);
-          const userNotifications = notifResponse.data.notifications || [];
-          
-          userNotifications.forEach(notif => {
-            if (!caseNotifications.find(n => n.caseId === notif.case_id)) {
-              caseNotifications.push({
-                id: notif.case_id || Math.random().toString(),
-                type: notif.type || 'notification',
-                title: notif.message || 'New Notification',
-                case_subject: notif.message,
-                caseId: notif.case_id,
-                timestamp: notif.timestamp,
-                status: notif.read ? 'Read' : 'New',
-              });
-            }
-          });
-        } catch (err) {
-          console.log('No additional notifications');
+        if (user?._id) {
+          try {
+            const notifResponse = await axios.get(`http://localhost:3000/notification/${user._id}`);
+            const userNotifications = notifResponse.data.notifications || [];
+            
+            userNotifications.forEach(notif => {
+              if (!caseNotifications.find(n => n.caseId === notif.case_id)) {
+                caseNotifications.push({
+                  id: notif.case_id || Math.random().toString(),
+                  type: notif.type || 'notification',
+                  title: notif.message || 'New Notification',
+                  case_subject: notif.message,
+                  caseId: notif.case_id,
+                  timestamp: notif.timestamp,
+                  status: notif.read ? 'Read' : 'New',
+                });
+              }
+            });
+          } catch (err) {
+            console.log('No additional notifications');
+          }
         }
 
         setNotifications(caseNotifications);

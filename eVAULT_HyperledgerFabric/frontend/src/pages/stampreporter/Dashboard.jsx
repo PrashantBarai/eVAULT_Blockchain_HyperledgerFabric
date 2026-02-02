@@ -98,12 +98,14 @@ const Dashboard = () => {
         }
 
         // Get notifications count
-        try {
-          const notifResponse = await axios.get(`http://localhost:3000/notification/${user._id}`);
-          const notifications = notifResponse.data.notifications || [];
-          notificationCount = notifications.filter(n => !n.read).length;
-        } catch (err) {
-          console.log('No notifications found');
+        if (user?._id) {
+          try {
+            const notifResponse = await axios.get(`http://localhost:3000/notification/${user._id}`);
+            const notifications = notifResponse.data.notifications || [];
+            notificationCount = notifications.filter(n => !n.read).length;
+          } catch (err) {
+            console.log('No notifications found');
+          }
         }
 
         setStats({

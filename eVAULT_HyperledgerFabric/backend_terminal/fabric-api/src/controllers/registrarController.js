@@ -402,6 +402,232 @@ const registrarController = {
         } finally {
             if (gateway) await disconnectFromNetwork(gateway);
         }
+    },
+
+    /**
+     * SEQUENTIAL BLOCKCHAIN OPERATIONS: Verify and Forward Case to Stamp Reporter
+     * 
+     * This endpoint performs multiple blockchain operations in sequence:
+     * 1. VerifyCase on lawyer-registrar-channel (marks case as VERIFIED_BY_REGISTRAR)
+     * 2. FetchAndStoreCaseFromLawyerChannel on registrar-stampreporter-channel (cross-channel transfer)
+     * 
+     * The lawyer dashboard aggregates data from multiple channels to show complete timeline.
+     */
+    verifyAndForwardToStampReporter: async (req, res) => {
+        const { caseID, verificationDetails, department } = req.body;
+        
+        if (!caseID) {
+            return res.status(400).json({ error: 'Missing caseID in request body' });
+        }
+        if (!verificationDetails) {
+            return res.status(400).json({ error: 'Missing verificationDetails in request body' });
+        }
+
+        let gateway1 = null;
+        let gateway2 = null;
+        const results = {
+            verify: { success: false, message: '' },
+            forward: { success: false, message: '' }
+        };
+
+        try {
+            const fabricConfig = config.fabric.registrar;
+            
+            // ================================================================
+            // PRE-CHECK: Get current case status
+            // ================================================================
+            const connection1 = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                fabricConfig.channelName,  // lawyer-registrar-channel
+                fabricConfig.chaincodeName // registrar
+            );
+            gateway1 = connection1.gateway;
+
+            // Check current status
+            const currentCaseResult = await connection1.contract.evaluateTransaction('GetCaseById', caseID);
+            const currentCase = JSON.parse(currentCaseResult.toString());
+            logger.info(`[Pre-check] Current case status: ${currentCase.status}`);
+
+            // If already verified, skip Step 1 and go directly to Step 2
+            const skipVerification = currentCase.status === 'VERIFIED_BY_REGISTRAR';
+            
+            // ================================================================
+            // STEP 1: VerifyCase on lawyer-registrar-channel (if not already verified)
+            // ================================================================
+            if (!skipVerification) {
+                logger.info(`[Step 1/2] Verifying case ${caseID} on ${fabricConfig.channelName}`);
+                
+                await connection1.contract.submitTransaction(
+                    'VerifyCase', 
+                    caseID, 
+                    JSON.stringify(verificationDetails)
+                );
+                
+                results.verify = {
+                    success: true,
+                    message: `Case ${caseID} verified on ${fabricConfig.channelName}`
+                };
+                logger.info(`[Step 1/2] ✓ Case ${caseID} verified successfully`);
+            } else {
+                results.verify = {
+                    success: true,
+                    message: `Case ${caseID} already verified, skipping verification step`
+                };
+                logger.info(`[Step 1/2] ⊙ Case ${caseID} already verified, proceeding to forward`);
+            }
+            
+            // ================================================================
+            // STEP 2: Fetch case data and store on registrar-stampreporter-channel
+            // ================================================================
+            // First, get the case data from lawyer-registrar-channel
+            const caseResult = await connection1.contract.evaluateTransaction('GetCaseById', caseID);
+            const caseData = JSON.parse(caseResult.toString());
+            logger.info(`[Step 2/2] Retrieved case data from lawyer-registrar-channel`);
+            
+            // Disconnect from first channel before connecting to second
+            await disconnectFromNetwork(gateway1);
+            gateway1 = null;
+
+            // Update case status for the new channel
+            caseData.status = 'PENDING_STAMP_REPORTER_REVIEW';
+            caseData.currentOrg = 'StampReportersOrg';
+            caseData.lastModified = new Date().toISOString();
+            
+            // Add history entry for the transfer
+            if (!caseData.history) caseData.history = [];
+            caseData.history.push({
+                status: 'TRANSFERRED_TO_STAMPREPORTER',
+                organization: 'RegistrarsOrg',
+                timestamp: new Date().toISOString(),
+                comments: 'Case transferred to stamp reporter for validation'
+            });
+
+            const forwardChannelName = fabricConfig.forwardChannel || 'registrar-stampreporter-channel';
+            logger.info(`[Step 2/2] Storing case ${caseID} on ${forwardChannelName}`);
+            
+            // Check if case already exists on the target channel
+            const connection2 = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                forwardChannelName,  // registrar-stampreporter-channel
+                fabricConfig.chaincodeName // registrar
+            );
+            gateway2 = connection2.gateway;
+
+            let caseExistsOnTargetChannel = false;
+            try {
+                await connection2.contract.evaluateTransaction('GetCaseById', caseID);
+                caseExistsOnTargetChannel = true;
+                logger.info(`[Step 2/2] Case already exists on ${forwardChannelName}, will update`);
+            } catch (err) {
+                logger.info(`[Step 2/2] Case does not exist on ${forwardChannelName}, will create new`);
+            }
+
+            // Store or update the case on registrar-stampreporter-channel
+            if (caseExistsOnTargetChannel) {
+                // Use UpdateCase if it exists (retry scenario)
+                logger.info(`[Step 2/2] Updating existing case on ${forwardChannelName}`);
+                await connection2.contract.submitTransaction(
+                    'UpdateCase', 
+                    caseID,
+                    JSON.stringify(caseData)
+                );
+            } else {
+                // Use StoreCase - generic storage without validation
+                logger.info(`[Step 2/2] Storing new case on ${forwardChannelName}`);
+                await connection2.contract.submitTransaction(
+                    'StoreCase', 
+                    JSON.stringify(caseData)
+                );
+            }
+            
+            results.forward = {
+                success: true,
+                message: `Case ${caseID} stored on ${forwardChannelName}`
+            };
+            logger.info(`[Step 2/2] ✓ Case ${caseID} stored on ${forwardChannelName} successfully`);
+            
+            // ================================================================
+            // ALL BLOCKCHAIN OPERATIONS COMPLETE
+            // ================================================================
+            logger.info(`All blockchain operations complete for case ${caseID}`);
+            
+            return res.status(200).json({
+                success: true,
+                message: `Case ${caseID} verified and forwarded to stamp reporter successfully`,
+                data: {
+                    caseID,
+                    department: department || '',
+                    steps: results
+                }
+            });
+
+        } catch (error) {
+            logger.error(`Error in verifyAndForwardToStampReporter: ${error.message}`);
+            
+            // ================================================================
+            // CRITICAL: REVERT Step 1 if Step 2 failed
+            // ================================================================
+            if (results.verify.success && !results.forward.success) {
+                logger.warn(`[ROLLBACK] Step 2 failed, reverting Step 1 verification...`);
+                
+                try {
+                    // Reconnect to lawyer-registrar-channel to revert
+                    const revertConnection = await connectToNetwork(
+                        config.fabric.registrar.org, 
+                        config.fabric.registrar.user, 
+                        config.fabric.registrar.channelName,
+                        config.fabric.registrar.chaincodeName
+                    );
+                    
+                    // Revert to PENDING_REGISTRAR_REVIEW status
+                    const revertDetails = {
+                        isVerified: false,
+                        comments: 'Verification reverted due to forward failure - please retry',
+                        department: ''
+                    };
+                    
+                    await revertConnection.contract.submitTransaction(
+                        'VerifyCase',
+                        caseID,
+                        JSON.stringify(revertDetails)
+                    );
+                    
+                    await disconnectFromNetwork(revertConnection.gateway);
+                    logger.info(`[ROLLBACK] ✓ Successfully reverted verification for case ${caseID}`);
+                    
+                    return res.status(500).json({
+                        success: false,
+                        message: `Transaction failed and was rolled back. Please retry the operation.`,
+                        error: error.message,
+                        rolledBack: true
+                    });
+                } catch (revertError) {
+                    logger.error(`[ROLLBACK] ✗ Failed to revert: ${revertError.message}`);
+                    
+                    return res.status(500).json({
+                        success: false,
+                        message: `Transaction failed. Case is in inconsistent state (verified but not forwarded). Contact admin.`,
+                        error: error.message,
+                        revertError: revertError.message,
+                        rolledBack: false,
+                        caseID: caseID
+                    });
+                }
+            }
+            
+            // Return partial results so frontend knows what succeeded/failed
+            return res.status(500).json({
+                success: false,
+                message: `Failed during sequential blockchain operations: ${error.message}`,
+                partialResults: results,
+                failedAt: results.verify.success ? 'forward' : 'verify'
+            });
+        } finally {
+            if (gateway1) await disconnectFromNetwork(gateway1);
+            if (gateway2) await disconnectFromNetwork(gateway2);
+        }
     }
 };
 

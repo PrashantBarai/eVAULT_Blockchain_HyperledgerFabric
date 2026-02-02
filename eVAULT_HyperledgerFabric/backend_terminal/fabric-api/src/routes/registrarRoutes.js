@@ -73,4 +73,14 @@ router.get('/stats', registrarController.queryStats);
  */
 router.post('/case/forward-to-stampreporter', registrarController.forwardToStampReporterChannel);
 
+/**
+ * @route   POST /api/registrar/case/verify-and-forward
+ * @desc    SEQUENTIAL: Verify case AND forward to stamp reporter in one call
+ *          Step 1: VerifyCase on lawyer-registrar-channel
+ *          Step 2: FetchAndStoreCaseFromLawyerChannel on registrar-stampreporter-channel
+ *          Frontend calls this ONCE, then calls client_backend for MongoDB update
+ * @access  Public
+ */
+router.post('/case/verify-and-forward', registrarController.verifyAndForwardToStampReporter);
+
 module.exports = router;

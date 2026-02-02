@@ -582,6 +582,119 @@ const stampReporterController = {
             if (gateway1) await disconnectFromNetwork(gateway1);
             if (gateway2) await disconnectFromNetwork(gateway2);
         }
+    },
+
+    /**
+     * SEQUENTIAL BLOCKCHAIN OPERATIONS: Validate and Forward Case to Bench Clerk
+     * 
+     * This endpoint performs multiple blockchain operations in sequence:
+     * 1. ValidateDocuments on registrar-stampreporter-channel (marks case as VALIDATED_BY_STAMP_REPORTER)
+     * 2. ForwardCaseToBenchClerk on stampreporter-benchclerk-channel (cross-channel transfer)
+     * 
+     * The lawyer dashboard aggregates data from multiple channels to show complete timeline.
+     */
+    validateAndForwardToBenchClerk: async (req, res) => {
+        const { caseID, validationDetails } = req.body;
+        
+        if (!caseID) {
+            return res.status(400).json({ error: 'Missing caseID in request body' });
+        }
+        if (!validationDetails) {
+            return res.status(400).json({ error: 'Missing validationDetails in request body' });
+        }
+
+        let gateway1 = null;
+        let gateway2 = null;
+        const results = {
+            validate: { success: false, message: '' },
+            forward: { success: false, message: '' }
+        };
+
+        try {
+            const fabricConfig = config.fabric.stampreporter;
+            
+            // ================================================================
+            // STEP 1: ValidateDocuments on registrar-stampreporter-channel
+            // ================================================================
+            logger.info(`[Step 1/2] Validating documents for case ${caseID} on ${fabricConfig.channelName}`);
+            
+            const connection1 = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                fabricConfig.channelName,  // registrar-stampreporter-channel
+                fabricConfig.chaincodeName // stampreporter
+            );
+            gateway1 = connection1.gateway;
+
+            await connection1.contract.submitTransaction(
+                'ValidateDocuments', 
+                caseID, 
+                JSON.stringify(validationDetails)
+            );
+            
+            results.validate = {
+                success: true,
+                message: `Documents validated for case ${caseID} on ${fabricConfig.channelName}`
+            };
+            logger.info(`[Step 1/2] ✓ Documents validated successfully`);
+            
+            // Disconnect from first channel before connecting to second
+            await disconnectFromNetwork(gateway1);
+            gateway1 = null;
+
+            // ================================================================
+            // STEP 2: ForwardCaseToBenchClerk on stampreporter-benchclerk-channel
+            // ================================================================
+            const benchclerkChannelName = fabricConfig.benchclerkChannel || 'stampreporter-benchclerk-channel';
+            logger.info(`[Step 2/2] Forwarding case ${caseID} to ${benchclerkChannelName}`);
+            
+            const connection2 = await connectToNetwork(
+                fabricConfig.org, 
+                fabricConfig.user, 
+                benchclerkChannelName,  // stampreporter-benchclerk-channel
+                fabricConfig.chaincodeName // stampreporter
+            );
+            gateway2 = connection2.gateway;
+
+            await connection2.contract.submitTransaction(
+                'ForwardCaseToBenchClerk', 
+                caseID
+            );
+            
+            results.forward = {
+                success: true,
+                message: `Case ${caseID} forwarded to ${benchclerkChannelName}`
+            };
+            logger.info(`[Step 2/2] ✓ Case ${caseID} forwarded to bench clerk successfully`);
+            
+            // ================================================================
+            // ALL BLOCKCHAIN OPERATIONS COMPLETE
+            // ================================================================
+            logger.info(`All blockchain operations complete for case ${caseID}`);
+            
+            return res.status(200).json({
+                success: true,
+                message: `Case ${caseID} validated and forwarded to bench clerk successfully`,
+                data: {
+                    caseID,
+                    steps: results
+                }
+            });
+
+        } catch (error) {
+            logger.error(`Error in validateAndForwardToBenchClerk: ${error.message}`);
+            
+            // Return partial results so frontend knows what succeeded/failed
+            return res.status(500).json({
+                success: false,
+                message: `Failed during sequential blockchain operations: ${error.message}`,
+                partialResults: results,
+                failedAt: results.validate.success ? 'forward' : 'validate'
+            });
+        } finally {
+            if (gateway1) await disconnectFromNetwork(gateway1);
+            if (gateway2) await disconnectFromNetwork(gateway2);
+        }
     }
 };
 

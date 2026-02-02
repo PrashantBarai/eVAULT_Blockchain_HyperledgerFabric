@@ -636,6 +636,7 @@ func (s *RegistrarContract) PutState(ctx contractapi.TransactionContextInterface
 }
 
 // UpdateCase updates an existing case in the ledger
+// UpdateCase updates an existing case in the ledger
 func (s *RegistrarContract) UpdateCase(ctx contractapi.TransactionContextInterface, caseID string, caseJSON string) error {
 	log.Printf("UpdateCase called for case ID: %s", caseID)
 
@@ -655,6 +656,49 @@ func (s *RegistrarContract) UpdateCase(ctx contractapi.TransactionContextInterfa
 	}
 
 	log.Printf("Case %s successfully updated", caseID)
+	return nil
+}
+
+// StoreCase stores a case without validation - used for cross-channel transfers
+func (s *RegistrarContract) StoreCase(ctx contractapi.TransactionContextInterface, caseJSON string) error {
+	log.Printf("StoreCase called")
+
+	// Parse case data
+	var caseData Case
+	err := json.Unmarshal([]byte(caseJSON), &caseData)
+	if err != nil {
+		log.Printf("Failed to unmarshal case data: %v", err)
+		return fmt.Errorf("failed to unmarshal case data: %v", err)
+	}
+
+	// Verify required fields
+	if caseData.ID == "" {
+		return fmt.Errorf("case ID is required")
+	}
+
+	// Initialize empty arrays if needed
+	if caseData.Documents == nil {
+		caseData.Documents = make([]Document, 0)
+	}
+	if caseData.History == nil {
+		caseData.History = make([]HistoryItem, 0)
+	}
+	if caseData.AssociatedLawyers == nil {
+		caseData.AssociatedLawyers = make([]string, 0)
+	}
+
+	// Store the case
+	caseBytes, err := json.Marshal(caseData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal case: %v", err)
+	}
+
+	err = ctx.GetStub().PutState(caseData.ID, caseBytes)
+	if err != nil {
+		return fmt.Errorf("failed to store case: %v", err)
+	}
+
+	log.Printf("Successfully stored case with ID: %s", caseData.ID)
 	return nil
 }
 

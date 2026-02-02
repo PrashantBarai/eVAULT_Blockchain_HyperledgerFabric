@@ -342,7 +342,7 @@
 # Global Configuration Variables
 # =============================================================================
 ORDERER_URL="orderer-api.127-0-0-1.nip.io:9090"
-MSP_BASE_PATH="/home/quantum_pulse/TE_Code/eVAULT_HyperledgerFabric/backend_terminal/_msp"
+MSP_BASE_PATH="/home/luminalcore/TE_Code/eVAULT_HyperledgerFabric/backend_terminal/_msp"
 CONTRACTS_BASE_PATH="./eVAULT_Contract/contracts"
 
 # Colors for output

@@ -72,16 +72,18 @@ const Notifications = () => {
         }
 
         // Also try to get user-specific notifications from MongoDB
-        try {
-          const userNotifResponse = await fetch(`http://localhost:3000/notification/${user?._id}`);
-          if (userNotifResponse.ok) {
-            const userNotifData = await userNotifResponse.json();
-            if (userNotifData.notifications) {
-              caseNotifications.push(...userNotifData.notifications);
+        if (user?._id) {
+          try {
+            const userNotifResponse = await fetch(`http://localhost:3000/notification/${user._id}`);
+            if (userNotifResponse.ok) {
+              const userNotifData = await userNotifResponse.json();
+              if (userNotifData.notifications) {
+                caseNotifications.push(...userNotifData.notifications);
+              }
             }
+          } catch (err) {
+            console.log('No MongoDB notifications found');
           }
-        } catch (err) {
-          console.log('No MongoDB notifications found');
         }
 
         setNotifications(caseNotifications);

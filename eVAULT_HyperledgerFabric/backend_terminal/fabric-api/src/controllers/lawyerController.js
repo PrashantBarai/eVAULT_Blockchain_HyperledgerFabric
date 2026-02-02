@@ -155,7 +155,14 @@ const lawyerController = {
     },
 
     /**
-     * Get case by ID
+     * Get case by ID - Aggregates data from multiple channels for complete timeline
+     * 
+     * Channel topology for lawyer:
+     * - lawyer-registrar-channel: Initial case data + registrar updates
+     * - stampreporter-lawyer-channel: Stamp reporter updates  
+     * - benchclerk-lawyer-channel: Bench clerk updates
+     * 
+     * This ensures the lawyer dashboard shows the complete case journey.
      */
     getCaseById: async (req, res) => {
         const { caseID } = req.params;
@@ -163,24 +170,165 @@ const lawyerController = {
             return res.status(400).json({ error: 'Missing caseID parameter' });
         }
 
-        let gateway;
+        let gateway1 = null;
+        let gateway2 = null;
+        let gateway3 = null;
+        
         try {
             const fabricConfig = config.fabric.lawyer;
-            const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
-                fabricConfig.chaincodeName
-            );
-            gateway = g;
+            let primaryCaseData = null;
+            let allHistoryItems = [];
+            let latestStatus = null;
+            let latestCurrentOrg = null;
+            let latestModified = null;
 
-            const result = await contract.evaluateTransaction('GetCase', caseID);
-            const caseData = JSON.parse(result.toString());
-            logger.info(`Retrieved case ${caseID}`);
+            // ================================================================
+            // Channel 1: lawyer-registrar-channel (primary source)
+            // ================================================================
+            try {
+                const connection1 = await connectToNetwork(
+                    fabricConfig.org, 
+                    fabricConfig.user, 
+                    'lawyer-registrar-channel', 
+                    'lawyer'
+                );
+                gateway1 = connection1.gateway;
+
+                const result1 = await connection1.contract.evaluateTransaction('GetCase', caseID);
+                primaryCaseData = JSON.parse(result1.toString());
+                
+                if (primaryCaseData.history) {
+                    allHistoryItems.push(...primaryCaseData.history);
+                }
+                latestStatus = primaryCaseData.status;
+                latestCurrentOrg = primaryCaseData.currentOrg;
+                latestModified = primaryCaseData.lastModified;
+                
+                logger.info(`[Channel 1] Retrieved case ${caseID} from lawyer-registrar-channel`);
+            } catch (err) {
+                logger.warn(`[Channel 1] Could not fetch from lawyer-registrar-channel: ${err.message}`);
+            } finally {
+                if (gateway1) await disconnectFromNetwork(gateway1);
+                gateway1 = null;
+            }
+
+            // ================================================================
+            // Channel 2: stampreporter-lawyer-channel (stamp reporter updates)
+            // ================================================================
+            try {
+                const connection2 = await connectToNetwork(
+                    fabricConfig.org, 
+                    fabricConfig.user, 
+                    'stampreporter-lawyer-channel', 
+                    'lawyer'
+                );
+                gateway2 = connection2.gateway;
+
+                const result2 = await connection2.contract.evaluateTransaction('GetCase', caseID);
+                const stampReporterData = JSON.parse(result2.toString());
+                
+                if (stampReporterData.history) {
+                    // Add history items that don't already exist
+                    stampReporterData.history.forEach(item => {
+                        const exists = allHistoryItems.some(h => 
+                            h.status === item.status && h.timestamp === item.timestamp
+                        );
+                        if (!exists) {
+                            allHistoryItems.push(item);
+                        }
+                    });
+                }
+                
+                // Update to latest status if this channel has newer data
+                if (stampReporterData.lastModified && 
+                    (!latestModified || new Date(stampReporterData.lastModified) > new Date(latestModified))) {
+                    latestStatus = stampReporterData.status;
+                    latestCurrentOrg = stampReporterData.currentOrg;
+                    latestModified = stampReporterData.lastModified;
+                }
+                
+                logger.info(`[Channel 2] Retrieved case ${caseID} from stampreporter-lawyer-channel`);
+            } catch (err) {
+                logger.debug(`[Channel 2] Case not found on stampreporter-lawyer-channel: ${err.message}`);
+            } finally {
+                if (gateway2) await disconnectFromNetwork(gateway2);
+                gateway2 = null;
+            }
+
+            // ================================================================
+            // Channel 3: benchclerk-lawyer-channel (bench clerk updates)
+            // ================================================================
+            try {
+                const connection3 = await connectToNetwork(
+                    fabricConfig.org, 
+                    fabricConfig.user, 
+                    'benchclerk-lawyer-channel', 
+                    'lawyer'
+                );
+                gateway3 = connection3.gateway;
+
+                const result3 = await connection3.contract.evaluateTransaction('GetCase', caseID);
+                const benchClerkData = JSON.parse(result3.toString());
+                
+                if (benchClerkData.history) {
+                    // Add history items that don't already exist
+                    benchClerkData.history.forEach(item => {
+                        const exists = allHistoryItems.some(h => 
+                            h.status === item.status && h.timestamp === item.timestamp
+                        );
+                        if (!exists) {
+                            allHistoryItems.push(item);
+                        }
+                    });
+                }
+                
+                // Update to latest status if this channel has newer data
+                if (benchClerkData.lastModified && 
+                    (!latestModified || new Date(benchClerkData.lastModified) > new Date(latestModified))) {
+                    latestStatus = benchClerkData.status;
+                    latestCurrentOrg = benchClerkData.currentOrg;
+                    latestModified = benchClerkData.lastModified;
+                }
+                
+                logger.info(`[Channel 3] Retrieved case ${caseID} from benchclerk-lawyer-channel`);
+            } catch (err) {
+                logger.debug(`[Channel 3] Case not found on benchclerk-lawyer-channel: ${err.message}`);
+            } finally {
+                if (gateway3) await disconnectFromNetwork(gateway3);
+                gateway3 = null;
+            }
+
+            // ================================================================
+            // Merge and return aggregated data
+            // ================================================================
+            if (!primaryCaseData) {
+                return res.status(404).json({
+                    success: false,
+                    message: `Case ${caseID} not found`
+                });
+            }
+
+            // Sort history by timestamp
+            allHistoryItems.sort((a, b) => {
+                const dateA = new Date(a.timestamp || 0);
+                const dateB = new Date(b.timestamp || 0);
+                return dateA - dateB;
+            });
+
+            // Build final aggregated case data
+            const aggregatedCaseData = {
+                ...primaryCaseData,
+                status: latestStatus || primaryCaseData.status,
+                currentOrg: latestCurrentOrg || primaryCaseData.currentOrg,
+                lastModified: latestModified || primaryCaseData.lastModified,
+                history: allHistoryItems
+            };
+
+            logger.info(`Retrieved and aggregated case ${caseID} from ${allHistoryItems.length} history items`);
             
             return res.status(200).json({
                 success: true,
-                data: caseData
+                data: aggregatedCaseData
             });
         } catch (error) {
             logger.error(`Error getting case by ID: ${error.message}`);
@@ -189,7 +337,9 @@ const lawyerController = {
                 message: `Failed to get case: ${error.message}`,
             });
         } finally {
-            await disconnectFromNetwork(gateway);
+            if (gateway1) await disconnectFromNetwork(gateway1);
+            if (gateway2) await disconnectFromNetwork(gateway2);
+            if (gateway3) await disconnectFromNetwork(gateway3);
         }
     },
 

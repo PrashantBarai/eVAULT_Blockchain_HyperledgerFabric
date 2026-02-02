@@ -115,31 +115,122 @@ const CaseVerification = () => {
   const handleApprove = async () => {
     try {
       setActionLoading(true);
+      setError('');
       const user = getUserData();
+      let assignedBenchClerkName = '';
       
-      // Call blockchain API to verify/approve the case (with cross-channel sync to lawyer)
-      const response = await fetch(`http://localhost:8000/api/stampreporter/case/verify`, {
+      // Step 1: FIRST check if bench clerks exist and assign in MongoDB
+      // This prevents blockchain operations if no bench clerk is available
+      try {
+        const assignResponse = await fetch('http://localhost:3000/assign-case-to-benchclerk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseID: id,
+            caseSubject: caseData.case_subject,
+            stampReporterEmail: user?.email || ''
+          })
+        });
+        
+        const assignData = await assignResponse.json();
+        
+        if (!assignResponse.ok) {
+          const errorMsg = assignData.detail || 'Failed to assign case';
+          if (errorMsg.includes('No bench clerks') || assignResponse.status === 404) {
+            throw new Error('No Bench Clerk users are registered in the system. Please ensure at least one Bench Clerk account exists before forwarding cases.');
+          }
+          throw new Error(errorMsg);
+        }
+        
+        if (assignData.success) {
+          assignedBenchClerkName = assignData.assigned_benchclerk_name || 'Bench Clerk';
+          console.log('Case assigned to bench clerk:', assignData);
+        } else {
+          throw new Error(assignData.message || 'Failed to assign case');
+        }
+      } catch (assignErr) {
+        console.error('Bench clerk assignment failed:', assignErr);
+        throw assignErr;
+      }
+      
+      // Step 2: Call validate-and-forward which does BOTH blockchain operations:
+      // 1. ValidateDocuments on registrar-stampreporter-channel
+      // 2. ForwardCaseToBenchClerk on stampreporter-benchclerk-channel
+      const response = await fetch('http://localhost:8000/api/stampreporter/case/validate-and-forward', {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ 
           caseID: id,
-          verificationDetails: {
+          validationDetails: {
             digital_signature: digitalSignature,
-            verifiedBy: user?.name || user?.email || 'Stamp Reporter',
-            status: 'VERIFIED_BY_STAMP_REPORTER'
+            verifiedBy: user?.username || user?.email || 'Stamp Reporter',
+            verifiedAt: new Date().toISOString(),
+            status: 'VALIDATED_BY_STAMP_REPORTER',
+            stampReporterId: user?.licenseId || '',
+            stampReporterEmail: user?.email || ''
           }
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || errorData.message || "Failed to approve case");
+        throw new Error(errorData.detail || errorData.message || "Failed to validate and forward case");
+      }
+
+      // Step 3: Notify the lawyer about case status update
+      try {
+        await fetch('http://localhost:3000/notify-lawyer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseID: id,
+            caseSubject: caseData.case_subject,
+            lawyerEmail: caseData.associated_lawyers,
+            status: 'FORWARDED_TO_BENCH_CLERK',
+            message: `Your case has been validated by Stamp Reporter and forwarded to ${assignedBenchClerkName} for further processing.`,
+            updatedBy: user?.username || 'Stamp Reporter'
+          })
+        });
+      } catch (notifyErr) {
+        console.warn('Lawyer notification failed:', notifyErr.message);
+      }
+
+      // Step 4: Update case status and timeline in MongoDB
+      try {
+        await fetch('http://localhost:3000/update-case-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseID: id,
+            status: 'FORWARDED_TO_BENCH_CLERK',
+            timeline: [
+              {
+                status: 'VALIDATED_BY_STAMP_REPORTER',
+                timestamp: new Date().toISOString(),
+                updatedBy: user?.username || 'Stamp Reporter',
+                comment: `Documents validated with digital signature`
+              },
+              {
+                status: 'FORWARDED_TO_BENCH_CLERK',
+                timestamp: new Date().toISOString(),
+                updatedBy: user?.username || 'Stamp Reporter',
+                comment: `Case forwarded to ${assignedBenchClerkName} for scheduling`
+              }
+            ]
+          })
+        });
+      } catch (updateErr) {
+        console.warn('Case status update failed:', updateErr.message);
       }
 
       setShowSuccess(true);
       setOpenSignDialog(false);
+      
+      // Show alert with assigned bench clerk name
+      alert(`Case successfully validated and assigned to ${assignedBenchClerkName} for further processing.`);
+      
       setTimeout(() => navigate("/stampreporter/dashboard"), 2000);
     } catch (err) {
       setError(err.message);
@@ -329,7 +420,25 @@ const CaseVerification = () => {
           </Grid>
         </Box>
 
-        {caseData.status !== "Verified" && (
+        {/* Check if case is already validated/forwarded */}
+        {caseData.status && (
+          caseData.status.includes('VALIDATED') || 
+          caseData.status.includes('FORWARDED') || 
+          caseData.status.includes('BENCH_CLERK') ||
+          caseData.status.includes('JUDGE')
+        ) ? (
+          <Alert severity="warning" sx={{ mt: 3 }}>
+            This case has already been processed (Status: {caseData.status}). No further action required.
+          </Alert>
+        ) : null}
+
+        {!(caseData.status && (
+          caseData.status.includes('VALIDATED') || 
+          caseData.status.includes('FORWARDED') || 
+          caseData.status.includes('BENCH_CLERK') ||
+          caseData.status.includes('JUDGE') ||
+          caseData.status === 'Verified'
+        )) && (
           <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end", mt: 4 }}>
             <Button
               variant="contained"
@@ -347,7 +456,7 @@ const CaseVerification = () => {
               onClick={() => setOpenSignDialog(true)}
               disabled={actionLoading}
             >
-              Approve & Sign
+              Validate & Forward to Bench Clerk
             </Button>
           </Box>
         )}

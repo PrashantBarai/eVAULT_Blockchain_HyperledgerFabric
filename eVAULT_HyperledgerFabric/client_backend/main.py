@@ -634,6 +634,298 @@ async def assign_case_to_stampreporter(request: Request):
         raise HTTPException(status_code=500, detail=f"Error assigning case: {str(e)}")
 
 
+# ==================== CASE STATUS UPDATE (Called by fabric-api) ====================
+
+@app.post('/update-case-status')
+async def update_case_status(request: Request):
+    """
+    Update case status and timeline in MongoDB.
+    Called by fabric-api after successful blockchain transactions.
+    """
+    try:
+        data = await request.json()
+        case_id = data.get("caseID")
+        new_status = data.get("status")
+        timeline_entries = data.get("timeline", [])
+        
+        if not case_id:
+            raise HTTPException(status_code=400, detail="caseID is required")
+        
+        print(f"Updating case {case_id} status to {new_status}")
+        
+        # Build update query
+        update_fields = {"last_modified": datetime.now().isoformat()}
+        
+        if new_status:
+            update_fields["status"] = new_status
+        
+        # Update case in case_collection (by case_id field, not _id)
+        result = case_collection.update_one(
+            {"case_id": case_id},
+            {
+                "$set": update_fields,
+                "$push": {"timeline": {"$each": timeline_entries}} if timeline_entries else {}
+            }
+        )
+        
+        # Also try updating by blockchain case_id pattern
+        if result.matched_count == 0:
+            result = case_collection.update_one(
+                {"case_id": {"$regex": case_id}},
+                {
+                    "$set": update_fields,
+                    "$push": {"timeline": {"$each": timeline_entries}} if timeline_entries else {}
+                }
+            )
+        
+        print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
+        
+        return {
+            "success": True,
+            "message": f"Case status updated to {new_status}",
+            "case_id": case_id,
+            "matched": result.matched_count,
+            "modified": result.modified_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating case status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating case status: {str(e)}")
+
+
+@app.get('/case-status/{case_id}')
+async def get_case_status(case_id: str):
+    """
+    Get case status and timeline from MongoDB by blockchain case_id.
+    Used by lawyer dashboard to see updated status/timeline.
+    """
+    try:
+        # Find by blockchain case_id field
+        case_doc = case_collection.find_one({"case_id": case_id})
+        
+        # Also try regex match for pattern
+        if not case_doc:
+            case_doc = case_collection.find_one({"case_id": {"$regex": case_id}})
+        
+        if not case_doc:
+            return {
+                "success": True,
+                "case_id": case_id,
+                "status": None,
+                "timeline": [],
+                "message": "No MongoDB record found - case may only exist on blockchain"
+            }
+        
+        # Convert ObjectId to string
+        if "_id" in case_doc:
+            case_doc["_id"] = str(case_doc["_id"])
+        
+        return {
+            "success": True,
+            "case_id": case_id,
+            "status": case_doc.get("status"),
+            "timeline": case_doc.get("timeline", []),
+            "last_modified": case_doc.get("last_modified"),
+            "assigned_registrar": case_doc.get("assigned_registrar"),
+            "assigned_stampreporter": case_doc.get("assigned_stampreporter"),
+            "assigned_benchclerk": case_doc.get("assigned_benchclerk")
+        }
+        
+    except Exception as e:
+        print(f"Error getting case status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting case status: {str(e)}")
+
+
+@app.post('/notify-lawyer')
+async def notify_lawyer(request: Request):
+    """
+    Send notification to lawyer about case status update.
+    Called by fabric-api after blockchain operations.
+    """
+    try:
+        data = await request.json()
+        lawyer_email = data.get("lawyerEmail")
+        case_id = data.get("caseID")
+        case_subject = data.get("caseSubject", "")
+        message = data.get("message", "Your case status has been updated")
+        notification_type = data.get("type", "CASE_STATUS_UPDATE")
+        
+        if not case_id:
+            raise HTTPException(status_code=400, detail="caseID is required")
+        
+        # Find lawyer by email or by case association
+        lawyer = None
+        if lawyer_email:
+            lawyer = users_collection.find_one({"email": lawyer_email, "user_type": "lawyer"})
+        
+        # If no email provided, try to find lawyer from case
+        if not lawyer:
+            case_doc = case_collection.find_one({"case_id": case_id})
+            if case_doc:
+                lawyer_id = case_doc.get("user_id")
+                if lawyer_id:
+                    lawyer = users_collection.find_one({"_id": ObjectId(lawyer_id)})
+        
+        if not lawyer:
+            print(f"Lawyer not found for case {case_id}")
+            return {"success": False, "message": "Lawyer not found"}
+        
+        # Create notification
+        notification = {
+            "type": notification_type,
+            "message": message,
+            "case_id": case_id,
+            "case_subject": case_subject,
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        
+        # Add notification to lawyer's notifications array
+        users_collection.update_one(
+            {"_id": lawyer["_id"]},
+            {"$push": {"notifications": notification}}
+        )
+        
+        print(f"Notification sent to lawyer {lawyer.get('email')} for case {case_id}")
+        
+        return {
+            "success": True,
+            "message": "Notification sent successfully",
+            "lawyer_id": str(lawyer["_id"]),
+            "lawyer_email": lawyer.get("email")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error sending notification: {e}")
+        raise HTTPException(status_code=500, detail=f"Error sending notification: {str(e)}")
+
+
+# ==================== BENCH CLERK ASSIGNMENT ====================
+
+@app.post('/assign-case-to-benchclerk')
+async def assign_case_to_benchclerk(request: Request):
+    """
+    Assign a blockchain case to a specific bench clerk based on queue (least cases first).
+    This works with blockchain case IDs and stores the assignment in MongoDB.
+    """
+    try:
+        data = await request.json()
+        blockchain_case_id = data.get("caseID")
+        case_subject = data.get("caseSubject", "")
+        stamp_reporter_email = data.get("stampReporterEmail", "")
+        
+        if not blockchain_case_id:
+            raise HTTPException(status_code=400, detail="caseID is required")
+        
+        # Check if case is already assigned to a bench clerk
+        existing_assignment = case_collection.find_one({
+            "case_id": blockchain_case_id,
+            "assigned_benchclerk": {"$exists": True, "$ne": None}
+        })
+        
+        if existing_assignment:
+            raise HTTPException(status_code=400, detail="Case already assigned to a bench clerk")
+        
+        # Get all bench clerks - use case-insensitive regex for user_type
+        benchclerks = list(users_collection.find({
+            "user_type": {"$regex": "^benchclerk$", "$options": "i"}
+        }))
+        
+        print(f"DEBUG: Found {len(benchclerks)} bench clerks")
+        
+        if not benchclerks:
+            raise HTTPException(status_code=404, detail="No bench clerks available in the system. Please ensure at least one bench clerk account exists.")
+        
+        # Queue-based allocation: Find bench clerk with least cases
+        clerk_case_counts = []
+        for clerk in benchclerks:
+            case_count = len(clerk.get("cases", []))
+            clerk_case_counts.append({
+                "clerk": clerk,
+                "case_count": case_count
+            })
+        
+        # Sort by case count (ascending) and pick the one with least cases
+        clerk_case_counts.sort(key=lambda x: x["case_count"])
+        assigned_clerk = clerk_case_counts[0]["clerk"]
+        clerk_id = assigned_clerk["_id"]
+        
+        # Update bench clerk's cases array - add the blockchain case ID
+        users_collection.update_one(
+            {"_id": clerk_id},
+            {"$addToSet": {"cases": blockchain_case_id}}
+        )
+        
+        # Update or create case reference in case_collection
+        case_collection.update_one(
+            {"case_id": blockchain_case_id},
+            {
+                "$set": {
+                    "assigned_benchclerk": str(clerk_id),
+                    "benchclerk_email": assigned_clerk.get("email"),
+                    "benchclerk_name": assigned_clerk.get("username"),
+                    "status": "PENDING_BENCH_CLERK_REVIEW",
+                    "benchclerk_assigned_at": datetime.now().isoformat()
+                }
+            },
+            upsert=True
+        )
+        
+        # Add notification for the bench clerk
+        notification = {
+            "type": "NEW_CASE",
+            "message": f"New case assigned: {case_subject or blockchain_case_id}",
+            "case_id": blockchain_case_id,
+            "timestamp": datetime.now().isoformat(),
+            "read": False
+        }
+        users_collection.update_one(
+            {"_id": clerk_id},
+            {"$push": {"notifications": notification}}
+        )
+        
+        return {
+            "success": True,
+            "message": "Case assigned to bench clerk successfully",
+            "case_id": blockchain_case_id,
+            "assigned_benchclerk_id": str(clerk_id),
+            "assigned_benchclerk_name": assigned_clerk.get("username", "Bench Clerk"),
+            "assigned_benchclerk_email": assigned_clerk.get("email", "")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error assigning case to bench clerk: {e}")
+        raise HTTPException(status_code=500, detail=f"Error assigning case: {str(e)}")
+
+
+@app.get('/benchclerk-cases/{benchclerk_id}')
+async def get_benchclerk_cases(benchclerk_id: str):
+    """
+    Get all blockchain case IDs assigned to a specific bench clerk.
+    """
+    try:
+        benchclerk = users_collection.find_one({"_id": ObjectId(benchclerk_id)})
+        if not benchclerk:
+            raise HTTPException(status_code=404, detail="Bench clerk not found")
+        
+        case_ids = benchclerk.get("cases", [])
+        
+        return {
+            "success": True,
+            "benchclerk_id": benchclerk_id,
+            "case_ids": case_ids,
+            "total_cases": len(case_ids)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching bench clerk cases: {str(e)}")
+
+
 @app.get('/stampreporter-cases/{stampreporter_id}')
 async def get_stampreporter_cases(stampreporter_id: str):
     """

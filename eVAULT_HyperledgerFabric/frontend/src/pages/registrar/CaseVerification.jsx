@@ -86,38 +86,13 @@ const CaseVerification = () => {
     setIsSubmitting(true);
     setError(null);
     let messages = [];
+    let assignedStampReporterName = '';
     
     try {
       const user = getUserData();
       
-      // Single Step: Call FetchAndStoreCaseFromLawyerChannel which handles everything:
-      // - Reads case from lawyer-registrar-channel
-      // - Verifies and updates status to TRANSFERRED_TO_STAMPREPORTER on source channel
-      // - Stores case on registrar-stampreporter-channel with status VERIFIED_BY_REGISTRAR
-      // - Syncs to stampreporter chaincode via StoreCase
-      // - Assigns to stamp reporter (status → PENDING_STAMP_REPORTER_REVIEW)
-      try {
-        const forwardResponse = await axios.post(
-          'http://localhost:8000/api/registrar/case/forward-to-stampreporter',
-          {
-            caseID: id,
-            department: selectedDepartment
-          }
-        );
-
-        if (forwardResponse.data.success) {
-          messages.push('✓ Case verified and forwarded to stamp reporter channel');
-          console.log('Case forwarded to stamp reporter channel:', forwardResponse.data);
-        } else {
-          throw new Error(forwardResponse.data.message || 'Failed to forward case');
-        }
-      } catch (forwardErr) {
-        console.error('Cross-channel forward failed:', forwardErr.message);
-        throw new Error(`Failed to forward case: ${forwardErr.response?.data?.message || forwardErr.message}`);
-      }
-
-      // Step 2: Assign case to a stamp reporter in MongoDB (queue-based allocation)
-      // This happens after blockchain operations to ensure consistency
+      // Step 1: FIRST check if stamp reporters exist and assign in MongoDB
+      // This prevents blockchain operations if no stamp reporter is available
       try {
         const assignResponse = await axios.post(
           'http://localhost:3000/assign-case-to-stampreporter',
@@ -130,19 +105,107 @@ const CaseVerification = () => {
         );
 
         if (assignResponse.data.success) {
-          messages.push(`✓ Case assigned to stamp reporter: ${assignResponse.data.stampreporter_email || 'Success'}`);
+          assignedStampReporterName = assignResponse.data.assigned_stampreporter_name || 'Stamp Reporter';
+          messages.push(`✓ Case assigned to: ${assignedStampReporterName} (${assignResponse.data.assigned_stampreporter_email || ''})`);
           console.log('Case assigned to stamp reporter:', assignResponse.data);
         } else {
-          messages.push(`⚠ MongoDB assignment: ${assignResponse.data.message}`);
+          throw new Error(assignResponse.data.message || 'Failed to assign case');
         }
       } catch (assignErr) {
-        console.warn('MongoDB assignment failed:', assignErr.message);
-        messages.push(`⚠ Database assignment: ${assignErr.response?.data?.message || assignErr.message}`);
+        console.error('MongoDB assignment failed:', assignErr.message);
+        // If no stamp reporter exists, show error and stop
+        const errorMsg = assignErr.response?.data?.detail || assignErr.message;
+        if (errorMsg.includes('No stamp reporters') || assignErr.response?.status === 404) {
+          throw new Error('No Stamp Reporter users are registered in the system. Please ensure at least one Stamp Reporter account exists before forwarding cases.');
+        }
+        throw new Error(`Failed to assign case: ${errorMsg}`);
+      }
+
+      // Step 2: Call verify-and-forward which does BOTH blockchain operations sequentially:
+      // 1. VerifyCase on lawyer-registrar-channel (marks as VERIFIED_BY_REGISTRAR)
+      // 2. FetchAndStoreCaseFromLawyerChannel on registrar-stampreporter-channel (cross-channel transfer)
+      try {
+        const forwardResponse = await axios.post(
+          'http://localhost:8000/api/registrar/case/verify-and-forward',
+          {
+            caseID: id,
+            department: selectedDepartment,
+            verificationDetails: {
+              verifiedBy: user?.username || 'Registrar',
+              verifiedAt: new Date().toISOString(),
+              department: selectedDepartment,
+              comment: `Case verified and forwarded to ${selectedDepartment} department`,
+              registrarEmail: user?.email || '',
+              registrarId: user?.licenseId || ''
+            }
+          }
+        );
+
+        if (forwardResponse.data.success) {
+          messages.push('✓ Case verified and forwarded on blockchain');
+          console.log('Case verified and forwarded:', forwardResponse.data);
+        } else {
+          throw new Error(forwardResponse.data.message || 'Failed to verify and forward case');
+        }
+      } catch (forwardErr) {
+        console.error('Verify and forward failed:', forwardErr.message);
+        throw new Error(`Failed to forward case on blockchain: ${forwardErr.response?.data?.message || forwardErr.message}`);
+      }
+
+      // Step 3: Notify the lawyer about case status update
+      try {
+        const notifyResponse = await axios.post(
+          'http://localhost:3000/notify-lawyer',
+          {
+            caseID: id,
+            caseSubject: caseDetails.case_subject,
+            lawyerEmail: caseDetails.associated_lawyers,
+            status: 'FORWARDED_TO_STAMP_REPORTER',
+            message: `Your case has been verified by Registrar and forwarded to ${assignedStampReporterName} (${selectedDepartment} department) for stamp verification.`,
+            updatedBy: user?.username || 'Registrar'
+          }
+        );
+
+        if (notifyResponse.data.success) {
+          messages.push('✓ Lawyer notified about case status');
+        }
+      } catch (notifyErr) {
+        console.warn('Lawyer notification failed:', notifyErr.message);
+        // Don't fail the whole operation for notification failure
+      }
+
+      // Step 4: Update case status and timeline in MongoDB
+      try {
+        await axios.post('http://localhost:3000/update-case-status', {
+          caseID: id,
+          status: 'FORWARDED_TO_STAMP_REPORTER',
+          timeline: [
+            {
+              status: 'VERIFIED_BY_REGISTRAR',
+              timestamp: new Date().toISOString(),
+              updatedBy: user?.username || 'Registrar',
+              comment: `Case verified and assigned to ${selectedDepartment} department`
+            },
+            {
+              status: 'FORWARDED_TO_STAMP_REPORTER',
+              timestamp: new Date().toISOString(),
+              updatedBy: user?.username || 'Registrar',
+              comment: `Case forwarded to ${assignedStampReporterName} for stamp verification`
+            }
+          ]
+        });
+        messages.push('✓ Case timeline updated');
+      } catch (updateErr) {
+        console.warn('Case status update failed:', updateErr.message);
       }
 
       setOpenApproveDialog(false);
       setSuccessMessage(messages.join('\n'));
       setShowSuccess(true);
+      
+      // Show alert with assigned stamp reporter name (like lawyer does)
+      alert(`Case successfully verified and assigned to ${assignedStampReporterName} for stamp verification.`);
+      
       setTimeout(() => {
         navigate('/registrar/dashboard');
       }, 3000);
@@ -239,6 +302,18 @@ const CaseVerification = () => {
             As a Registrar, your role is to assign the appropriate department and forward the case to Stamp Reporter for verification.
           </Alert>
 
+          {/* Check if case is already forwarded/verified */}
+          {caseDetails.status && (
+            caseDetails.status.includes('VERIFIED') || 
+            caseDetails.status.includes('FORWARDED') || 
+            caseDetails.status.includes('STAMP_REPORTER') ||
+            caseDetails.status.includes('TRANSFERRED')
+          ) ? (
+            <Alert severity="warning" sx={{ mb: 3 }}>
+              This case has already been processed (Status: {caseDetails.status}). No further action required.
+            </Alert>
+          ) : null}
+
           <Box sx={{
             display: 'flex',
             gap: 2,
@@ -250,8 +325,21 @@ const CaseVerification = () => {
               color="success"
               startIcon={<SendIcon />}
               onClick={() => setOpenApproveDialog(true)}
+              disabled={
+                caseDetails.status && (
+                  caseDetails.status.includes('VERIFIED') || 
+                  caseDetails.status.includes('FORWARDED') || 
+                  caseDetails.status.includes('STAMP_REPORTER') ||
+                  caseDetails.status.includes('TRANSFERRED')
+                )
+              }
             >
-              Assign Department & Forward
+              {caseDetails.status && (
+                caseDetails.status.includes('VERIFIED') || 
+                caseDetails.status.includes('FORWARDED') || 
+                caseDetails.status.includes('STAMP_REPORTER') ||
+                caseDetails.status.includes('TRANSFERRED')
+              ) ? 'Already Forwarded' : 'Assign Department & Forward'}
             </Button>
           </Box>
         </Paper>

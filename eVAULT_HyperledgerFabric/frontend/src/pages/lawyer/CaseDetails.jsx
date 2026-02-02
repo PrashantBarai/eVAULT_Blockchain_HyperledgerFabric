@@ -43,9 +43,10 @@ const CaseDetails = () => {
   useEffect(() => {
     const fetchCaseDetails = async () => {
       try {
+        // Fetch case details from blockchain - API now aggregates from multiple channels
         const response = await axios.get(`http://localhost:8000/api/lawyer/case/${id}`); 
         console.log('Case details response:', response.data);
-        // Backend returns { success, data } where data is the case object
+        // Backend returns { success, data } where data is the aggregated case object
         setCaseData(response.data.data || response.data.case || response.data);
       } catch (err) {
         setError(err.message || 'Failed to fetch case details');
@@ -76,26 +77,37 @@ const CaseDetails = () => {
         throw new Error('Authentication required');
       }
   
-      // Step 1: Assign case to a registrar in MongoDB (queue-based allocation)
-      const assignResponse = await axios.post(
-        'http://localhost:3000/assign-case-to-registrar',
-        { 
-          caseID: id,
-          caseSubject: caseData.caseSubject || caseData.title || caseData.case_subject,
-          lawyerEmail: user.email
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
+      // Step 1: FIRST assign case to a registrar in MongoDB (queue-based allocation)
+      // This checks if registrars exist before proceeding with blockchain
+      let assignedRegistrarName = '';
+      try {
+        const assignResponse = await axios.post(
+          'http://localhost:3000/assign-case-to-registrar',
+          { 
+            caseID: id,
+            caseSubject: caseData.caseSubject || caseData.title || caseData.case_subject,
+            lawyerEmail: user.email
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            }
           }
+        );
+        
+        if (!assignResponse.data.success) {
+          throw new Error(assignResponse.data.message || 'Failed to assign case to registrar');
         }
-      );
-      
-      if (!assignResponse.data.success) {
-        throw new Error(assignResponse.data.message || 'Failed to assign case to registrar');
+        
+        assignedRegistrarName = assignResponse.data.assigned_registrar_name || 'Registrar';
+        console.log('Case assigned to registrar:', assignResponse.data);
+      } catch (assignErr) {
+        const errorMsg = assignErr.response?.data?.detail || assignErr.message;
+        if (errorMsg.includes('No registrars') || assignErr.response?.status === 404) {
+          throw new Error('No Registrar users are registered in the system. Please ensure at least one Registrar account exists before submitting cases.');
+        }
+        throw new Error(`Failed to assign case: ${errorMsg}`);
       }
-      
-      console.log('Case assigned to registrar:', assignResponse.data);
       
       // Step 2: Update blockchain via Fabric API
       const blockchainResponse = await axios.post(
@@ -109,7 +121,7 @@ const CaseDetails = () => {
       );
   
       if (blockchainResponse.data.success) {
-        alert(`Case successfully assigned to ${assignResponse.data.assigned_registrar_name} and sent to registrar queue.`);
+        alert(`Case successfully assigned to ${assignedRegistrarName} and sent to registrar queue.`);
         // Update the case data to reflect the new status
         setCaseData(prev => ({ 
           ...prev, 
@@ -160,14 +172,61 @@ const CaseDetails = () => {
       cid: doc.hash || doc.id,
       type: doc.type || 'Unknown',
     })),
-    timeline: [
-      {
-        date: new Date(caseData.filedDate || caseData.filed_date).toLocaleDateString(),
+    // Build timeline from blockchain history and MongoDB timeline
+    timeline: (() => {
+      const events = [];
+      
+      // Map status to human-readable event names (defined once for reuse)
+      const statusEventMap = {
+        'SUBMITTED_TO_REGISTRAR': 'Submitted to Registrar',
+        'RECEIVED_FROM_LAWYER': 'Received by Registrar',
+        'PENDING_REGISTRAR_REVIEW': 'Pending Registrar Review',
+        'VERIFIED_BY_REGISTRAR': 'Verified by Registrar',
+        'FORWARDED_TO_STAMP_REPORTER': 'Forwarded to Stamp Reporter',
+        'TRANSFERRED_TO_STAMPREPORTER': 'Transferred to Stamp Reporter',
+        'ASSIGNED_TO_STAMP_REPORTER': 'Assigned to Stamp Reporter',
+        'PENDING_STAMP_REPORTER_REVIEW': 'Pending Stamp Reporter Review',
+        'VALIDATED_BY_STAMP_REPORTER': 'Validated by Stamp Reporter',
+        'FORWARDED_TO_BENCH_CLERK': 'Forwarded to Bench Clerk',
+        'FORWARDED_TO_BENCHCLERK': 'Forwarded to Bench Clerk',
+        'PENDING_BENCH_CLERK_REVIEW': 'Pending Bench Clerk Review',
+        'FORWARDED_TO_JUDGE': 'Forwarded to Judge',
+        'PENDING_JUDGMENT': 'Pending Judgment',
+        'CASE_CLOSED': 'Case Closed',
+      };
+      
+      // Add filed date as first event
+      events.push({
+        date: new Date(caseData.filedDate || caseData.filed_date || caseData.createdAt).toLocaleDateString(),
         event: 'Case Filed',
         description: 'Initial case documents submitted to the court',
-      },
-      // Add more timeline events dynamically from your data
-    ],
+      });
+      
+      // Add events from blockchain history if available
+      if (caseData.history && Array.isArray(caseData.history)) {
+        caseData.history.forEach((entry) => {
+          const eventName = statusEventMap[entry.status] || entry.status;
+          const eventDate = entry.timestamp 
+            ? new Date(entry.timestamp).toLocaleDateString()
+            : new Date().toLocaleDateString();
+          
+          events.push({
+            date: eventDate,
+            event: eventName,
+            description: entry.comment || `Status updated by ${entry.updatedBy || entry.organization || 'System'}`,
+          });
+        });
+      }
+      
+      // Sort events by date
+      events.sort((a, b) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        return dateA - dateB;
+      });
+      
+      return events;
+    })(),
   };
 
   return (

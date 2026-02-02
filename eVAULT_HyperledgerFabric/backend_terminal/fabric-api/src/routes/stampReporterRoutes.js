@@ -94,4 +94,14 @@ router.post('/case/verify', stampReporterController.verifyCaseAndSyncToLawyer);
  */
 router.post('/case/reject', stampReporterController.rejectCaseAndSyncToLawyer);
 
+/**
+ * @route   POST /api/stampreporter/case/validate-and-forward
+ * @desc    SEQUENTIAL: Validate documents AND forward to bench clerk in one call
+ *          Step 1: ValidateDocuments on registrar-stampreporter-channel
+ *          Step 2: ForwardCaseToBenchClerk on stampreporter-benchclerk-channel
+ *          Frontend calls this ONCE, then calls client_backend for MongoDB update
+ * @access  Public
+ */
+router.post('/case/validate-and-forward', stampReporterController.validateAndForwardToBenchClerk);
+
 module.exports = router;
