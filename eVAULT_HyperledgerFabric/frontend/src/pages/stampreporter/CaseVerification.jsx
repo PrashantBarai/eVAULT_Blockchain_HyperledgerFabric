@@ -13,10 +13,16 @@ import {
   Divider,
   Grid,
   CircularProgress,
+  RadioGroup,
+  Radio,
+  FormControlLabel,
+  FormControl,
+  FormLabel,
 } from "@mui/material";
 import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
+  PauseCircle as PauseCircleIcon,
   PictureAsPdf,
   Image,
   VideoLibrary,
@@ -55,9 +61,11 @@ const DocumentCard = ({ type, name, size }) => {
 const CaseVerification = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [openRejectDialog, setOpenRejectDialog] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
+  const [openActionDialog, setOpenActionDialog] = useState(false);
+  const [actionType, setActionType] = useState(''); // 'reject' or 'on-hold'
+  const [actionReason, setActionReason] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [digitalSignature, setDigitalSignature] = useState("");
   const [openSignDialog, setOpenSignDialog] = useState(false);
   const [caseData, setCaseData] = useState(null);
@@ -90,12 +98,12 @@ const CaseVerification = () => {
           setCaseData({
             _id: id,
             case_subject: c.caseSubject || c.title || 'Untitled Case',
-            case_type: c.caseType || 'N/A',
+            case_type: c.type || c.caseType || 'N/A',
             associated_lawyers: c.associatedLawyers?.join(', ') || c.createdBy || 'N/A',
             filed_date: c.filedDate || c.createdAt,
             description: c.description || 'No description provided',
             status: c.status || 'Pending',
-            file_cids: c.fileCids || c.documents || [],
+            documents: c.documents || [],
             department: c.department || 'N/A',
             rejected: c.rejected || null,
           });
@@ -119,48 +127,11 @@ const CaseVerification = () => {
       const user = getUserData();
       let assignedBenchClerkName = '';
       
-      // Step 1: FIRST check if bench clerks exist and assign in MongoDB
-      // This prevents blockchain operations if no bench clerk is available
-      try {
-        const assignResponse = await fetch('http://localhost:3000/assign-case-to-benchclerk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            caseID: id,
-            caseSubject: caseData.case_subject,
-            stampReporterEmail: user?.email || ''
-          })
-        });
-        
-        const assignData = await assignResponse.json();
-        
-        if (!assignResponse.ok) {
-          const errorMsg = assignData.detail || 'Failed to assign case';
-          if (errorMsg.includes('No bench clerks') || assignResponse.status === 404) {
-            throw new Error('No Bench Clerk users are registered in the system. Please ensure at least one Bench Clerk account exists before forwarding cases.');
-          }
-          throw new Error(errorMsg);
-        }
-        
-        if (assignData.success) {
-          assignedBenchClerkName = assignData.assigned_benchclerk_name || 'Bench Clerk';
-          console.log('Case assigned to bench clerk:', assignData);
-        } else {
-          throw new Error(assignData.message || 'Failed to assign case');
-        }
-      } catch (assignErr) {
-        console.error('Bench clerk assignment failed:', assignErr);
-        throw assignErr;
-      }
-      
-      // Step 2: Call validate-and-forward which does BOTH blockchain operations:
-      // 1. ValidateDocuments on registrar-stampreporter-channel
-      // 2. ForwardCaseToBenchClerk on stampreporter-benchclerk-channel
+      // Step 1: BLOCKCHAIN FIRST (source of truth)
+      // validate-and-forward does ALL blockchain ops + MongoDB update in backend
       const response = await fetch('http://localhost:8000/api/stampreporter/case/validate-and-forward', {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           caseID: id,
           validationDetails: {
@@ -179,7 +150,26 @@ const CaseVerification = () => {
         throw new Error(errorData.detail || errorData.message || "Failed to validate and forward case");
       }
 
-      // Step 3: Notify the lawyer about case status update
+      // Step 2: Assign case to bench clerk in MongoDB (non-critical)
+      try {
+        const assignResponse = await fetch('http://localhost:3000/assign-case-to-benchclerk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseID: id,
+            caseSubject: caseData.case_subject,
+            stampReporterEmail: user?.email || ''
+          })
+        });
+        const assignData = await assignResponse.json();
+        if (assignData.success) {
+          assignedBenchClerkName = assignData.assigned_benchclerk_name || 'Bench Clerk';
+        }
+      } catch (assignErr) {
+        console.warn('MongoDB bench clerk assignment failed (non-critical):', assignErr.message);
+      }
+
+      // Step 3: Notify lawyer (non-critical)
       try {
         await fetch('http://localhost:3000/notify-lawyer', {
           method: 'POST',
@@ -189,7 +179,7 @@ const CaseVerification = () => {
             caseSubject: caseData.case_subject,
             lawyerEmail: caseData.associated_lawyers,
             status: 'FORWARDED_TO_BENCH_CLERK',
-            message: `Your case has been validated by Stamp Reporter and forwarded to ${assignedBenchClerkName} for further processing.`,
+            message: `Your case has been validated by Stamp Reporter and forwarded to ${assignedBenchClerkName || 'Bench Clerk'} for further processing.`,
             updatedBy: user?.username || 'Stamp Reporter'
           })
         });
@@ -197,40 +187,13 @@ const CaseVerification = () => {
         console.warn('Lawyer notification failed:', notifyErr.message);
       }
 
-      // Step 4: Update case status and timeline in MongoDB
-      try {
-        await fetch('http://localhost:3000/update-case-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            caseID: id,
-            status: 'FORWARDED_TO_BENCH_CLERK',
-            timeline: [
-              {
-                status: 'VALIDATED_BY_STAMP_REPORTER',
-                timestamp: new Date().toISOString(),
-                updatedBy: user?.username || 'Stamp Reporter',
-                comment: `Documents validated with digital signature`
-              },
-              {
-                status: 'FORWARDED_TO_BENCH_CLERK',
-                timestamp: new Date().toISOString(),
-                updatedBy: user?.username || 'Stamp Reporter',
-                comment: `Case forwarded to ${assignedBenchClerkName} for scheduling`
-              }
-            ]
-          })
-        });
-      } catch (updateErr) {
-        console.warn('Case status update failed:', updateErr.message);
-      }
+      // NOTE: MongoDB timeline update is handled by backend after blockchain success
 
       setShowSuccess(true);
+      setSuccessMessage(`Case validated and forwarded to ${assignedBenchClerkName || 'Bench Clerk'} successfully!`);
       setOpenSignDialog(false);
       
-      // Show alert with assigned bench clerk name
-      alert(`Case successfully validated and assigned to ${assignedBenchClerkName} for further processing.`);
-      
+      alert(`Case successfully validated and assigned to ${assignedBenchClerkName || 'Bench Clerk'} for further processing.`);
       setTimeout(() => navigate("/stampreporter/dashboard"), 2000);
     } catch (err) {
       setError(err.message);
@@ -239,31 +202,63 @@ const CaseVerification = () => {
     }
   };
 
-  const handleReject = async () => {
+  /**
+   * Unified handler for Reject and On Hold actions
+   */
+  const handleCaseAction = async () => {
+    if (!actionType || !actionReason) return;
+    
     try {
       setActionLoading(true);
+      setError('');
       const user = getUserData();
       
-      // Call blockchain API to reject the case (with cross-channel sync to lawyer)
-      const response = await fetch(`http://localhost:8000/api/stampreporter/case/reject`, {
+      const isReject = actionType === 'reject';
+      const endpoint = isReject 
+        ? 'http://localhost:8000/api/stampreporter/case/reject'
+        : 'http://localhost:8000/api/stampreporter/case/on-hold';
+      
+      const body = isReject 
+        ? { caseID: id, reason: actionReason, rejectedBy: user?.username || user?.email || 'Stamp Reporter' }
+        : { caseID: id, reason: actionReason, heldBy: user?.username || user?.email || 'Stamp Reporter' };
+
+      // Blockchain + MongoDB handled by backend
+      const response = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ 
-          caseID: id,
-          reason: rejectReason,
-          rejectedBy: user?.name || user?.email || 'Stamp Reporter'
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || errorData.message || "Failed to reject case");
+        throw new Error(errorData.detail || errorData.message || `Failed to ${isReject ? 'reject' : 'put on hold'} case`);
       }
 
+      // Notify lawyer (non-critical)
+      try {
+        const statusLabel = isReject ? 'Rejected by Stamp Reporter' : 'Put On Hold by Stamp Reporter';
+        await fetch('http://localhost:3000/notify-lawyer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseID: id,
+            caseSubject: caseData.case_subject,
+            lawyerEmail: caseData.associated_lawyers,
+            status: isReject ? 'REJECTED_BY_STAMP_REPORTER' : 'ON_HOLD_BY_STAMP_REPORTER',
+            message: `Your case has been ${statusLabel.toLowerCase()}. Reason: ${actionReason}`,
+            updatedBy: user?.username || 'Stamp Reporter'
+          })
+        });
+      } catch (notifyErr) {
+        console.warn('Lawyer notification failed:', notifyErr.message);
+      }
+
+      const statusMsg = isReject ? 'rejected' : 'put on hold';
+      setSuccessMessage(`Case successfully ${statusMsg}!`);
       setShowSuccess(true);
-      setOpenRejectDialog(false);
+      setOpenActionDialog(false);
+      
+      alert(`Case successfully ${statusMsg}. Reason: ${actionReason}`);
       setTimeout(() => navigate("/stampreporter/dashboard"), 2000);
     } catch (err) {
       setError(err.message);
@@ -309,7 +304,7 @@ const CaseVerification = () => {
     <Box sx={{ p: 3 }}>
       {showSuccess && (
         <Alert severity="success" sx={{ mb: 3 }}>
-          Case successfully processed! Redirecting...
+          {successMessage || 'Case successfully processed!'} Redirecting...
         </Alert>
       )}
 
@@ -391,21 +386,21 @@ const CaseVerification = () => {
             Uploaded Documents
           </Typography>
           <Grid container spacing={2}>
-            {caseData.file_cids && caseData.file_cids.length > 0 ? (
-              caseData.file_cids.map((file, index) => (
-                <Grid item xs={12} sm={6} md={4} key={index}>
+            {caseData.documents && caseData.documents.length > 0 ? (
+              caseData.documents.map((doc, index) => (
+                <Grid item xs={12} sm={6} md={4} key={doc.id || index}>
                   <Button 
                     component="a"
-                    href={`https://lime-occasional-xerinae-665.mypinata.cloud/ipfs/${file}`}
+                    href={doc.hash ? `https://lime-occasional-xerinae-665.mypinata.cloud/ipfs/${doc.hash}` : '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     fullWidth
                     sx={{ textTransform: 'none' }}
                   >
                     <DocumentCard
-                      type={getDocumentType(file.filename)}
-                      name={file.filename || `Document ${index + 1}`}
-                      size={file.size ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : null}
+                      type={getDocumentType(doc.name)}
+                      name={doc.name || `Document ${index + 1}`}
+                      size={doc.uploadedAt ? `Uploaded: ${new Date(doc.uploadedAt).toLocaleDateString()}` : null}
                     />
                   </Button>
                 </Grid>
@@ -425,7 +420,9 @@ const CaseVerification = () => {
           caseData.status.includes('VALIDATED') || 
           caseData.status.includes('FORWARDED') || 
           caseData.status.includes('BENCH_CLERK') ||
-          caseData.status.includes('JUDGE')
+          caseData.status.includes('JUDGE') ||
+          caseData.status.includes('REJECTED') ||
+          caseData.status.includes('ON_HOLD')
         ) ? (
           <Alert severity="warning" sx={{ mt: 3 }}>
             This case has already been processed (Status: {caseData.status}). No further action required.
@@ -437,6 +434,8 @@ const CaseVerification = () => {
           caseData.status.includes('FORWARDED') || 
           caseData.status.includes('BENCH_CLERK') ||
           caseData.status.includes('JUDGE') ||
+          caseData.status.includes('REJECTED') ||
+          caseData.status.includes('ON_HOLD') ||
           caseData.status === 'Verified'
         )) && (
           <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end", mt: 4 }}>
@@ -444,10 +443,28 @@ const CaseVerification = () => {
               variant="contained"
               color="error"
               startIcon={<CancelIcon />}
-              onClick={() => setOpenRejectDialog(true)}
+              onClick={() => {
+                setActionType('reject');
+                setActionReason('');
+                setOpenActionDialog(true);
+              }}
               disabled={actionLoading}
             >
               Reject Case
+            </Button>
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<PauseCircleIcon />}
+              onClick={() => {
+                setActionType('on-hold');
+                setActionReason('');
+                setOpenActionDialog(true);
+              }}
+              disabled={actionLoading}
+              sx={{ color: 'white' }}
+            >
+              Put On Hold
             </Button>
             <Button
               variant="contained"
@@ -462,6 +479,7 @@ const CaseVerification = () => {
         )}
       </Paper>
 
+      {/* Digital Signature Dialog (Approve) */}
       <Dialog
         open={openSignDialog}
         onClose={() => !actionLoading && setOpenSignDialog(false)}
@@ -499,36 +517,87 @@ const CaseVerification = () => {
         </DialogActions>
       </Dialog>
 
+      {/* Reject / On Hold Action Dialog */}
       <Dialog
-        open={openRejectDialog}
-        onClose={() => !actionLoading && setOpenRejectDialog(false)}
+        open={openActionDialog}
+        onClose={() => !actionLoading && setOpenActionDialog(false)}
+        maxWidth="sm"
+        fullWidth
       >
-        <DialogTitle>Reject Case</DialogTitle>
+        <DialogTitle>
+          {actionType === 'reject' ? 'Reject Case' : 'Put Case On Hold'}
+        </DialogTitle>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Reason for Rejection"
-            type="text"
-            fullWidth
-            multiline
-            rows={4}
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            disabled={actionLoading}
-          />
+          <Box sx={{ mt: 1 }}>
+            <FormControl component="fieldset" sx={{ mb: 2 }}>
+              <FormLabel component="legend">Select Action</FormLabel>
+              <RadioGroup
+                row
+                value={actionType}
+                onChange={(e) => setActionType(e.target.value)}
+              >
+                <FormControlLabel
+                  value="reject"
+                  control={<Radio color="error" />}
+                  label="Completely Reject"
+                />
+                <FormControlLabel
+                  value="on-hold"
+                  control={<Radio color="warning" />}
+                  label="Put On Hold"
+                />
+              </RadioGroup>
+            </FormControl>
+            
+            {actionType === 'reject' && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                <strong>Reject:</strong> The case will be sent back to the lawyer as rejected. 
+                The lawyer must resubmit the case from scratch.
+              </Alert>
+            )}
+            {actionType === 'on-hold' && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                <strong>On Hold:</strong> The case will be held for review. 
+                The lawyer will be notified and may provide additional information.
+              </Alert>
+            )}
+            
+            <TextField
+              autoFocus
+              margin="dense"
+              label={actionType === 'reject' ? 'Reason for Rejection' : 'Reason for Hold'}
+              type="text"
+              fullWidth
+              multiline
+              rows={4}
+              value={actionReason}
+              onChange={(e) => setActionReason(e.target.value)}
+              disabled={actionLoading}
+              placeholder={
+                actionType === 'reject' 
+                  ? 'Explain why this case is being rejected...' 
+                  : 'Explain why this case is being put on hold...'
+              }
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenRejectDialog(false)} disabled={actionLoading}>
+          <Button onClick={() => setOpenActionDialog(false)} disabled={actionLoading}>
             Cancel
           </Button>
           <Button
-            onClick={handleReject}
-            color="error"
-            disabled={!rejectReason || actionLoading}
+            onClick={handleCaseAction}
+            color={actionType === 'reject' ? 'error' : 'warning'}
+            variant="contained"
+            disabled={!actionReason || actionLoading}
             endIcon={actionLoading && <CircularProgress size={20} />}
+            sx={actionType === 'on-hold' ? { color: 'white' } : {}}
           >
-            Confirm Rejection
+            {actionLoading 
+              ? 'Processing...' 
+              : actionType === 'reject' 
+                ? 'Confirm Rejection' 
+                : 'Confirm On Hold'}
           </Button>
         </DialogActions>
       </Dialog>

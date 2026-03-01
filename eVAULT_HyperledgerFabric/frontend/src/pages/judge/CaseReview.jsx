@@ -1,218 +1,108 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  IconButton,
-  Chip,
-  Grid,
-  Stepper,
-  Step,
-  StepLabel,
-  Card,
-  CardContent,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  CircularProgress,
-  Snackbar,
-  Alert,
-  InputAdornment, // Added this missing import
+  Box, Paper, Typography, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, Button, TextField, Dialog, DialogTitle, DialogContent,
+  DialogActions, IconButton, Chip, Grid, Card, CardContent,
+  CircularProgress, Snackbar, Alert, InputAdornment,
 } from '@mui/material';
 import {
-  Search as SearchIcon,
-  Close as CloseIcon,
-  Gavel as GavelIcon,
-  Description as DescriptionIcon,
+  Search as SearchIcon, Close as CloseIcon, Gavel as GavelIcon,
+  CheckCircle as CheckCircleIcon, Visibility as VisibilityIcon,
 } from '@mui/icons-material';
-import { getUserData, getAuthToken } from '../../utils/auth';
+
+const FABRIC_API = 'http://localhost:8000/api/judge';
 
 const CaseReview = () => {
   const [cases, setCases] = useState([]);
   const [selectedCase, setSelectedCase] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
-  const [decisionType, setDecisionType] = useState('');
-  const [decisionReason, setDecisionReason] = useState('');
-  const [openDecisionDialog, setOpenDecisionDialog] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState('');
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    const fetchCases = async () => {
-      try {
-        const token = getAuthToken();
-        if (!token) {
-          setError('You must be logged in to view cases.');
-          setLoading(false);
-          return;
-        }
+  const fetchPendingCases = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${FABRIC_API}/cases/pending`);
+      if (!response.ok) throw new Error('Failed to fetch pending cases');
+      const data = await response.json();
+      setCases(data.data || []);
+    } catch (err) {
+      setError(err.message);
+      setSnackbar({ open: true, message: `Error: ${err.message}`, severity: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        const user = getUserData();
-        if (!user) {
-          setError('User data not found.');
-          setLoading(false);
-          return;
-        }
-
-        const userIdToUse = user._id;
-        if (!userIdToUse) {
-          setError('User ID is missing.');
-          setLoading(false);
-          return;
-        }
-
-        const response = await fetch(`http://localhost:8000/get-cases/${userIdToUse}`, {
-          method: 'GET',
-          headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch cases');
-        }
-
-        const data = await response.json();
-        setCases(Array.isArray(data.cases) ? data.cases : []);
-      } catch (error) {
-        setError(error.message);
-        setSnackbar({
-          open: true,
-          message: `Error: ${error.message}`,
-          severity: 'error'
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCases();
-  }, []);
+  useEffect(() => { fetchPendingCases(); }, []);
 
   const handleViewCase = (caseData) => {
     setSelectedCase(caseData);
     setOpenDialog(true);
   };
 
-  const handleDecisionClick = () => {
-    setOpenDecisionDialog(true);
-  };
-
-  const handleDecisionSubmit = async () => {
+  const handleAcceptCase = async (caseData) => {
+    const caseID = caseData?.id || caseData?.caseNumber;
+    if (!caseID) return;
     try {
-      const token = getAuthToken();
-      const response = await fetch(`http://localhost:8000/case/${selectedCase._id}/decision`, {
+      setAccepting(true);
+      const response = await fetch(`${FABRIC_API}/case/accept`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          decision: decisionType,
-          reason: decisionReason
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseID }),
       });
-
       if (!response.ok) {
-        throw new Error('Failed to submit decision');
+        const errData = await response.json();
+        throw new Error(errData.message || 'Failed to accept case');
       }
-
-      const result = await response.json();
-      
-      // Update local state
-      setCases(cases.map(c => 
-        c._id === selectedCase._id ? { ...c, status: decisionType } : c
-      ));
-      
-      setSnackbar({
-        open: true,
-        message: `Decision submitted successfully`,
-        severity: 'success'
-      });
-      
-      setOpenDecisionDialog(false);
+      setSnackbar({ open: true, message: `Case ${caseID} accepted successfully`, severity: 'success' });
       setOpenDialog(false);
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: `Error: ${error.message}`,
-        severity: 'error'
-      });
+      fetchPendingCases();
+    } catch (err) {
+      setSnackbar({ open: true, message: err.message, severity: 'error' });
+    } finally {
+      setAccepting(false);
     }
   };
 
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
-  };
-
-  const getStatusChipColor = (status) => {
+  const getStatusColor = (status) => {
     if (!status) return 'default';
-    switch (status.toLowerCase()) {
-      case 'new': return 'info';
-      case 'accepted': return 'success';
-      case 'rejected': return 'error';
-      case 'on hold': return 'warning';
-      case 'pending': return 'default';
-      default: return 'default';
-    }
+    const s = status.toUpperCase();
+    if (s.includes('PENDING')) return 'warning';
+    if (s.includes('FORWARDED')) return 'info';
+    if (s.includes('RECEIVED')) return 'success';
+    if (s.includes('JUDGMENT')) return 'primary';
+    return 'default';
   };
 
-  const filteredCases = cases.filter((case_) => {
-    const searchLower = searchQuery.toLowerCase();
+  const filteredCases = cases.filter((c) => {
+    const q = searchQuery.toLowerCase();
     return (
-      case_._id?.toLowerCase().includes(searchLower) ||
-      case_.case_subject?.toLowerCase().includes(searchLower) ||
-      case_.case_type?.toLowerCase().includes(searchLower) ||
-      case_.status?.toLowerCase().includes(searchLower)
+      c.id?.toLowerCase().includes(q) ||
+      c.title?.toLowerCase().includes(q) ||
+      c.caseNumber?.toLowerCase().includes(q) ||
+      c.type?.toLowerCase().includes(q) ||
+      c.status?.toLowerCase().includes(q)
     );
   });
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Case Review & Decision
+      <Typography variant="h4" gutterBottom>Case Review &mdash; Pending from Bench Clerk</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        Cases forwarded by the Bench Clerk awaiting your acceptance. Accept a case to begin review.
       </Typography>
 
-      <TextField
-        fullWidth
-        variant="outlined"
-        placeholder="Search cases..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        sx={{ mb: 3 }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-        }}
+      <TextField fullWidth variant="outlined" placeholder="Search cases by ID, title, type..."
+        value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} sx={{ mb: 3 }}
+        InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
       />
 
       {loading ? (
-        <Box display="flex" justifyContent="center">
-          <CircularProgress />
-        </Box>
+        <Box display="flex" justifyContent="center"><CircularProgress /></Box>
       ) : error ? (
         <Typography color="error">{error}</Typography>
       ) : (
@@ -229,41 +119,29 @@ const CaseReview = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredCases.length > 0 ? (
-                filteredCases.map((case_) => (
-                  <TableRow key={case_._id}>
-                    <TableCell>{case_._id}</TableCell>
-                    <TableCell>{case_.case_subject}</TableCell>
-                    <TableCell>{case_.case_type}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={case_.status || 'Pending'}
-                        color={getStatusChipColor(case_.status)}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {new Date(case_.filed_date).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="contained"
-                        onClick={() => handleViewCase(case_)}
-                        sx={{
-                          background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-                          color: 'white',
-                        }}
-                      >
-                        Review
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    No cases found
+              {filteredCases.length > 0 ? filteredCases.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>{c.caseNumber || c.id}</TableCell>
+                  <TableCell>{c.title || c.caseSubject}</TableCell>
+                  <TableCell>{c.type || 'N/A'}</TableCell>
+                  <TableCell>
+                    <Chip label={c.status || 'Pending'} color={getStatusColor(c.status)} size="small" />
                   </TableCell>
+                  <TableCell>{c.filedDate ? new Date(c.filedDate).toLocaleDateString() : 'N/A'}</TableCell>
+                  <TableCell>
+                    <IconButton onClick={() => handleViewCase(c)} sx={{ color: '#1a237e' }}>
+                      <VisibilityIcon />
+                    </IconButton>
+                    <Button variant="contained" size="small" startIcon={<CheckCircleIcon />}
+                      onClick={() => handleAcceptCase(c)} disabled={accepting}
+                      sx={{ ml: 1, background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)', color: 'white' }}>
+                      Accept
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )) : (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">No pending cases found</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -272,18 +150,11 @@ const CaseReview = () => {
       )}
 
       {/* Case Details Dialog */}
-      <Dialog
-        open={openDialog}
-        onClose={() => setOpenDialog(false)}
-        maxWidth="lg"
-        fullWidth
-      >
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">Case Details</Typography>
-            <IconButton onClick={() => setOpenDialog(false)}>
-              <CloseIcon />
-            </IconButton>
+            <IconButton onClick={() => setOpenDialog(false)}><CloseIcon /></IconButton>
           </Box>
         </DialogTitle>
         <DialogContent dividers>
@@ -292,87 +163,92 @@ const CaseReview = () => {
               <Grid item xs={12} md={8}>
                 <Card sx={{ mb: 3 }}>
                   <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      {selectedCase.case_subject}
-                    </Typography>
+                    <Typography variant="h6" gutterBottom>{selectedCase.title || selectedCase.caseSubject}</Typography>
                     <Grid container spacing={2}>
                       <Grid item xs={12} sm={6}>
                         <Typography variant="body2" color="text.secondary">
-                          Case ID: {selectedCase._id}
+                          Case ID: {selectedCase.id}
                         </Typography>
                       </Grid>
                       <Grid item xs={12} sm={6}>
                         <Typography variant="body2" color="text.secondary">
-                          Type: {selectedCase.case_type}
+                          Case Number: {selectedCase.caseNumber || 'N/A'}
                         </Typography>
                       </Grid>
                       <Grid item xs={12} sm={6}>
                         <Typography variant="body2" color="text.secondary">
-                          Status: 
-                          <Chip
-                            label={selectedCase.status || 'Pending'}
-                            color={getStatusChipColor(selectedCase.status)}
-                            size="small"
-                            sx={{ ml: 1 }}
-                          />
+                          Type: {selectedCase.type || 'N/A'}
                         </Typography>
                       </Grid>
                       <Grid item xs={12} sm={6}>
                         <Typography variant="body2" color="text.secondary">
-                          Filed Date: {new Date(selectedCase.filed_date).toLocaleDateString()}
+                          Status: <Chip label={selectedCase.status || 'Pending'}
+                            color={getStatusColor(selectedCase.status)} size="small" sx={{ ml: 1 }} />
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Filed: {selectedCase.filedDate ? new Date(selectedCase.filedDate).toLocaleDateString() : 'N/A'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Client: {selectedCase.clientName || 'N/A'}
                         </Typography>
                       </Grid>
                       <Grid item xs={12}>
                         <Typography variant="body2" color="text.secondary">
-                          Description: {selectedCase.case_description || 'No description available'}
+                          Description: {selectedCase.description || 'No description available'}
                         </Typography>
                       </Grid>
                     </Grid>
                   </CardContent>
                 </Card>
 
-                <Typography variant="h6" gutterBottom>
-                  Case History
-                </Typography>
-                <Stepper orientation="vertical">
-                  {selectedCase.history?.length > 0 ? (
-                    selectedCase.history.map((step, index) => (
-                      <Step key={index} active={true}>
-                        <StepLabel>
-                          <Typography variant="subtitle2">{step.action}</Typography>
-                          <Typography variant="caption">
-                            {new Date(step.date).toLocaleDateString()} • {step.actor}
+                {/* Documents */}
+                {selectedCase.documents?.length > 0 && (
+                  <>
+                    <Typography variant="h6" gutterBottom>Documents ({selectedCase.documents.length})</Typography>
+                    {selectedCase.documents.map((doc, i) => (
+                      <Card key={i} sx={{ mt: 1 }}>
+                        <CardContent>
+                          <Typography variant="body2">
+                            <strong>{doc.name}</strong> — {doc.type} {doc.validated ? '(Validated)' : '(Pending)'}
                           </Typography>
-                        </StepLabel>
-                      </Step>
-                    ))
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      No history available
-                    </Typography>
-                  )}
-                </Stepper>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </>
+                )}
+
+                {/* History */}
+                {selectedCase.history?.length > 0 && (
+                  <>
+                    <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Case History</Typography>
+                    {selectedCase.history.map((h, i) => (
+                      <Card key={i} sx={{ mt: 1 }}>
+                        <CardContent>
+                          <Typography variant="body2">
+                            <strong>{h.status}</strong> — {h.organization} ({new Date(h.timestamp).toLocaleString()})
+                          </Typography>
+                          {h.comments && <Typography variant="caption">{h.comments}</Typography>}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </>
+                )}
               </Grid>
-              
+
               <Grid item xs={12} md={4}>
-                <Card sx={{ mb: 3, bgcolor: '#f5f5f5' }}>
+                <Card sx={{ bgcolor: '#f5f5f5' }}>
                   <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Take Action
-                    </Typography>
-                    <Button
-                      fullWidth
-                      variant="contained"
-                      color="primary"
-                      startIcon={<GavelIcon />}
-                      onClick={handleDecisionClick}
-                      sx={{
-                        mb: 2,
-                        background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-                      }}
-                    >
-                      Make Decision
+                    <Typography variant="h6" gutterBottom>Actions</Typography>
+                    <Button fullWidth variant="contained" startIcon={<CheckCircleIcon />}
+                      onClick={() => handleAcceptCase(selectedCase)} disabled={accepting}
+                      sx={{ mb: 2, background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)' }}>
+                      {accepting ? 'Accepting...' : 'Accept Case'}
                     </Button>
+                    {accepting && <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', mt: 1 }} />}
                   </CardContent>
                 </Card>
               </Grid>
@@ -381,62 +257,10 @@ const CaseReview = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Decision Dialog */}
-      <Dialog
-        open={openDecisionDialog}
-        onClose={() => setOpenDecisionDialog(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Make Decision</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mb: 2, mt: 1 }}>
-            <InputLabel>Decision</InputLabel>
-            <Select
-              value={decisionType}
-              label="Decision"
-              onChange={(e) => setDecisionType(e.target.value)}
-            >
-              <MenuItem value="accepted">Accept Case</MenuItem>
-              <MenuItem value="rejected">Reject Case</MenuItem>
-              <MenuItem value="on hold">Put On Hold</MenuItem>
-            </Select>
-          </FormControl>
-          <TextField
-            fullWidth
-            multiline
-            rows={4}
-            label="Reason/Comments"
-            value={decisionReason}
-            onChange={(e) => setDecisionReason(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenDecisionDialog(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleDecisionSubmit}
-            sx={{
-              background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
-            }}
-          >
-            Submit Decision
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Snackbar for notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <Alert
-          onClose={handleCloseSnackbar}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
+      <Snackbar open={snackbar.open} autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
           {snackbar.message}
         </Alert>
       </Snackbar>

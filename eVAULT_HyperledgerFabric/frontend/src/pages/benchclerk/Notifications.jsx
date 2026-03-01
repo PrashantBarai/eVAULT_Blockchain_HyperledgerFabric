@@ -52,13 +52,13 @@ const Notifications = () => {
         }
 
 
-        const response = await fetch(`http://localhost:8000/benchclerk/notifs/${userIdToUse}`, {
+        const response = await fetch(`http://localhost:3000/notification/${userIdToUse}`, {
           method: 'GET',
           headers: { Authorization: `Bearer ${token}` },
         });
 
         if (!response.ok) throw new Error('Failed to fetch notifications');
-        
+
         const data = await response.json();
         setNotifications(data.notifications);
       } catch (err) {
@@ -82,9 +82,9 @@ const Notifications = () => {
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Notifications</Typography>
-        <Badge 
-          badgeContent={notifications.length} 
-          color="error" 
+        <Badge
+          badgeContent={notifications.length}
+          color="error"
           sx={{ ml: 2 }}
         >
           <NotificationsActiveIcon color="action" />

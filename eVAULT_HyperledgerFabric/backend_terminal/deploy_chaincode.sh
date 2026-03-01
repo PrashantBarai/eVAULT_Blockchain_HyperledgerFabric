@@ -73,6 +73,25 @@
 #   - Press 'q'   → Quit the entire automation
 #
 # ┌───────────────────────────────────────────────────────────────────────────┐
+# │                    RETRY ON ERROR (Auto-Prompt)                            │
+# └───────────────────────────────────────────────────────────────────────────┘
+#
+#   If any step fails (e.g., connection timeout, peer unreachable, transient
+#   network error), the script will NOT skip or proceed automatically.
+#   Instead, it will prompt:
+#
+#     [r] Retry this step  (default - just press Enter)
+#     [c] Continue / skip
+#     [q] Quit
+#
+#   This applies to all critical operations:
+#     • Chaincode installation (peer lifecycle chaincode install)
+#     • Chaincode approval    (peer lifecycle chaincode approveformyorg)
+#     • Chaincode commit      (peer lifecycle chaincode commit)
+#
+#   Press Enter (or 'r') to retry until the connection issue is resolved.
+#
+# ┌───────────────────────────────────────────────────────────────────────────┐
 # │                         ALL AVAILABLE COMMANDS                            │
 # └───────────────────────────────────────────────────────────────────────────┘
 #
@@ -534,6 +553,9 @@ package_chaincode() {
 package_all_chaincodes() {
     log_section "Packaging All Chaincodes"
     
+    # Setup Fabric environment before packaging
+    setup_fabric_env
+    
     local lawyer_pkg=$(package_chaincode "lawyer")
     local registrar_pkg=$(package_chaincode "registrar")
     local stampreporter_pkg=$(package_chaincode "stampreporter")
@@ -590,74 +612,107 @@ install_chaincode_interactive() {
     
     log_info "Installing ${package_file} on current peer..."
     
-    # Install the chaincode
-    local install_output=$(peer lifecycle chaincode install "$package_file" 2>&1)
-    local install_status=$?
+    # Install the chaincode with retry loop
+    local max_auto_retries=3
+    local retry_count=0
     
-    echo "$install_output"
-    
-    # Check if already installed (extract from error message)
-    if echo "$install_output" | grep -q "already successfully installed"; then
-        log_warning "${chaincode_name} already installed"
+    while true; do
+        local install_output=$(peer lifecycle chaincode install "$package_file" 2>&1)
+        local install_status=$?
         
-        # Extract package ID from error message
-        local package_id=$(echo "$install_output" | grep -oP "package ID '\K[^']+")
+        echo "$install_output"
         
-        if [ -z "$package_id" ]; then
-            # Fallback: query installed chaincodes
-            log_info "Querying installed chaincodes to get package ID..."
-            local query_output=$(peer lifecycle chaincode queryinstalled 2>&1)
-            package_id=$(echo "$query_output" | grep "Label: ${chaincode_name}_" | head -1 | grep -oP "Package ID: \K[^,]+")
-        fi
-        
-        if [ ! -z "$package_id" ]; then
-            log_info "Package ID: ${package_id}"
-            echo ""
+        # Check if already installed (extract from error message)
+        if echo "$install_output" | grep -q "already successfully installed"; then
+            log_warning "${chaincode_name} already installed"
             
-            # Auto-export the package ID
-            local var_name="${chaincode_name^^}_CC_PACKAGE_ID"
-            export ${var_name}="${package_id}"
+            # Extract package ID from error message
+            local package_id=$(echo "$install_output" | grep -oP "package ID '\K[^']+")
             
-            log_success "Auto-exported: ${var_name}=${package_id}"
-            echo ""
-            log_info "You can also manually export with:"
-            echo -e "${CYAN}export ${var_name}=${package_id}${NC}"
-            echo ""
+            if [ -z "$package_id" ]; then
+                # Fallback: query installed chaincodes
+                log_info "Querying installed chaincodes to get package ID..."
+                local query_output=$(peer lifecycle chaincode queryinstalled 2>&1)
+                package_id=$(echo "$query_output" | grep "Label: ${chaincode_name}_" | head -1 | grep -oP "Package ID: \K[^,]+")
+            fi
             
-            # Prompt to continue
-            read -p "Press Enter to continue to next chaincode..."
+            if [ ! -z "$package_id" ]; then
+                log_info "Package ID: ${package_id}"
+                echo ""
+                
+                # Auto-export the package ID
+                local var_name="${chaincode_name^^}_CC_PACKAGE_ID"
+                export ${var_name}="${package_id}"
+                
+                log_success "Auto-exported: ${var_name}=${package_id}"
+                echo ""
+                log_info "You can also manually export with:"
+                echo -e "${CYAN}export ${var_name}=${package_id}${NC}"
+                echo ""
+                
+                # Prompt to continue
+                read -p "Press Enter to continue to next chaincode..."
+            else
+                log_error "Could not extract package ID for ${chaincode_name}"
+                return 1
+            fi
+            return 0  # Success (already installed)
+            
+        elif [ $install_status -eq 0 ]; then
+            log_success "${chaincode_name} installed successfully!"
+            
+            # Extract package ID from output
+            local package_id=$(echo "$install_output" | grep -o 'Chaincode code package identifier: .*' | cut -d ' ' -f 5)
+            
+            if [ ! -z "$package_id" ]; then
+                log_info "Package ID: ${package_id}"
+                echo ""
+                
+                # Auto-export the package ID
+                local var_name="${chaincode_name^^}_CC_PACKAGE_ID"
+                export ${var_name}="${package_id}"
+                
+                log_success "Auto-exported: ${var_name}=${package_id}"
+                echo ""
+                log_info "You can also manually export with:"
+                echo -e "${CYAN}export ${var_name}=${package_id}${NC}"
+                echo ""
+                
+                # Prompt to continue
+                read -p "Press Enter to continue to next chaincode..."
+            fi
+            return 0  # Success
         else
-            log_error "Could not extract package ID for ${chaincode_name}"
-            return 1
+            # FAILED - offer retry
+            retry_count=$((retry_count + 1))
+            log_error "Failed to install ${chaincode_name} (attempt ${retry_count})"
+            echo ""
+            echo -e "${YELLOW}This may be due to a connection issue or temporary error.${NC}"
+            echo -e "${YELLOW}What would you like to do?${NC}"
+            echo -e "  ${GREEN}[r]${NC} Retry installation (recommended for connection errors)"
+            echo -e "  ${YELLOW}[c]${NC} Continue / skip this chaincode"
+            echo -e "  ${RED}[q]${NC} Quit entire process"
+            echo -n "  Your choice: "
+            
+            read -r retry_choice
+            case $retry_choice in
+                r|R|"")
+                    log_info "Retrying installation of ${chaincode_name}..."
+                    echo ""
+                    # Loop continues
+                    ;;
+                q|Q)
+                    log_warning "Terminating process..."
+                    return 1
+                    ;;
+                c|C|*)
+                    log_info "Skipping ${chaincode_name} installation..."
+                    read -p "Press Enter to continue to next chaincode..."
+                    return 1
+                    ;;
+            esac
         fi
-        
-    elif [ $install_status -eq 0 ]; then
-        log_success "${chaincode_name} installed successfully!"
-        
-        # Extract package ID from output
-        local package_id=$(echo "$install_output" | grep -o 'Chaincode code package identifier: .*' | cut -d ' ' -f 5)
-        
-        if [ ! -z "$package_id" ]; then
-            log_info "Package ID: ${package_id}"
-            echo ""
-            
-            # Auto-export the package ID
-            local var_name="${chaincode_name^^}_CC_PACKAGE_ID"
-            export ${var_name}="${package_id}"
-            
-            log_success "Auto-exported: ${var_name}=${package_id}"
-            echo ""
-            log_info "You can also manually export with:"
-            echo -e "${CYAN}export ${var_name}=${package_id}${NC}"
-            echo ""
-            
-            # Prompt to continue
-            read -p "Press Enter to continue to next chaincode..."
-        fi
-    else
-        log_error "Failed to install ${chaincode_name}"
-        return 1
-    fi
+    done
 }
 
 # Install chaincodes on LawyersOrg peer
@@ -911,21 +966,34 @@ approve_chaincode() {
     
     log_info "Approving chaincode '${chaincode_name}' on channel '${channel}' (version: ${version}, sequence: ${sequence})..."
     
-    peer lifecycle chaincode approveformyorg \
-        -o ${ORDERER_URL} \
-        --channelID ${channel} \
-        --name ${chaincode_name} \
-        --version ${version} \
-        --sequence ${sequence} \
-        --waitForEvent \
-        --package-id ${package_id}
-    
-    if [ $? -eq 0 ]; then
-        log_success "Approved '${chaincode_name}' on '${channel}' (version: ${version}, sequence: ${sequence})"
-    else
-        log_error "Failed to approve '${chaincode_name}' on '${channel}'"
-        return 1
-    fi
+    while true; do
+        peer lifecycle chaincode approveformyorg \
+            -o ${ORDERER_URL} \
+            --channelID ${channel} \
+            --name ${chaincode_name} \
+            --version ${version} \
+            --sequence ${sequence} \
+            --waitForEvent \
+            --package-id ${package_id}
+        
+        if [ $? -eq 0 ]; then
+            log_success "Approved '${chaincode_name}' on '${channel}' (version: ${version}, sequence: ${sequence})"
+            break
+        else
+            log_error "Failed to approve '${chaincode_name}' on '${channel}'"
+            echo -e "${YELLOW}What would you like to do?${NC}"
+            echo -e "  ${GREEN}[r]${NC} Retry approval (recommended for connection errors)"
+            echo -e "  ${YELLOW}[c]${NC} Continue / skip"
+            echo -e "  ${RED}[q]${NC} Quit"
+            echo -n "  Your choice: "
+            read -r choice
+            case $choice in
+                r|R|"") log_info "Retrying approval..."; continue ;;
+                q|Q) return 1 ;;
+                *) return 1 ;;
+            esac
+        fi
+    done
 }
 
 # Smart approve: automatically decides whether to match committed or use next sequence
@@ -962,21 +1030,34 @@ approve_chaincode_smart() {
         echo -e "${CYAN}└─────────────────────────────────────────────────────────────────────────┘${NC}"
         echo ""
         
-        peer lifecycle chaincode approveformyorg \
-            -o ${ORDERER_URL} \
-            --channelID ${channel} \
-            --name ${chaincode_name} \
-            --version ${version} \
-            --sequence ${committed_seq} \
-            --waitForEvent \
-            --package-id ${package_id}
-        
-        if [ $? -eq 0 ]; then
-            log_success "Approved '${chaincode_name}' on '${channel}' (version: ${version}, sequence: ${committed_seq})"
-        else
-            log_error "Failed to approve '${chaincode_name}' on '${channel}'"
-            return 1
-        fi
+        while true; do
+            peer lifecycle chaincode approveformyorg \
+                -o ${ORDERER_URL} \
+                --channelID ${channel} \
+                --name ${chaincode_name} \
+                --version ${version} \
+                --sequence ${committed_seq} \
+                --waitForEvent \
+                --package-id ${package_id}
+            
+            if [ $? -eq 0 ]; then
+                log_success "Approved '${chaincode_name}' on '${channel}' (version: ${version}, sequence: ${committed_seq})"
+                break
+            else
+                log_error "Failed to approve '${chaincode_name}' on '${channel}'"
+                echo -e "${YELLOW}What would you like to do?${NC}"
+                echo -e "  ${GREEN}[r]${NC} Retry approval (recommended for connection errors)"
+                echo -e "  ${YELLOW}[c]${NC} Continue / skip"
+                echo -e "  ${RED}[q]${NC} Quit"
+                echo -n "  Your choice: "
+                read -r choice
+                case $choice in
+                    r|R|"") log_info "Retrying approval..."; continue ;;
+                    q|Q) return 1 ;;
+                    *) return 1 ;;
+                esac
+            fi
+        done
     fi
 }
 
@@ -1007,19 +1088,32 @@ commit_chaincode() {
     
     log_info "Committing chaincode '${chaincode_name}' on channel '${channel}' (version: ${version}, sequence: ${sequence})..."
     
-    peer lifecycle chaincode commit \
-        -o ${ORDERER_URL} \
-        --channelID ${channel} \
-        --name ${chaincode_name} \
-        --version ${version} \
-        --sequence ${sequence}
-    
-    if [ $? -eq 0 ]; then
-        log_success "Committed '${chaincode_name}' on '${channel}' (version: ${version}, sequence: ${sequence})"
-    else
-        log_error "Failed to commit '${chaincode_name}' on '${channel}'"
-        return 1
-    fi
+    while true; do
+        peer lifecycle chaincode commit \
+            -o ${ORDERER_URL} \
+            --channelID ${channel} \
+            --name ${chaincode_name} \
+            --version ${version} \
+            --sequence ${sequence}
+        
+        if [ $? -eq 0 ]; then
+            log_success "Committed '${chaincode_name}' on '${channel}' (version: ${version}, sequence: ${sequence})"
+            break
+        else
+            log_error "Failed to commit '${chaincode_name}' on '${channel}'"
+            echo -e "${YELLOW}What would you like to do?${NC}"
+            echo -e "  ${GREEN}[r]${NC} Retry commit (recommended for connection errors)"
+            echo -e "  ${YELLOW}[c]${NC} Continue / skip"
+            echo -e "  ${RED}[q]${NC} Quit"
+            echo -n "  Your choice: "
+            read -r choice
+            case $choice in
+                r|R|"") log_info "Retrying commit..."; continue ;;
+                q|Q) return 1 ;;
+                *) return 1 ;;
+            esac
+        fi
+    done
 }
 
 check_readiness() {
@@ -1403,7 +1497,7 @@ prompt_action() {
     esac
 }
 
-# Helper function: prompt on error - continue or terminate
+# Helper function: prompt on error - retry, continue, or terminate
 prompt_on_error() {
     local org_name=$1
     local error_context=$2
@@ -1419,12 +1513,17 @@ prompt_on_error() {
     fi
     echo ""
     echo -e "${YELLOW}What would you like to do?${NC}"
-    echo -e "  ${GREEN}[c]${NC} Continue with next organization"
+    echo -e "  ${GREEN}[r]${NC} Retry this step"
+    echo -e "  ${YELLOW}[c]${NC} Continue with next organization (skip this)"
     echo -e "  ${RED}[q]${NC} Quit entire deployment process"
     echo -n "  Your choice: "
     
     read -r choice
     case $choice in
+        r|R)
+            log_info "Retrying..."
+            return 2  # Return code 2 = retry
+            ;;
         q|Q)
             log_warning "Terminating global deployment process..."
             return 1  # Return code 1 = quit/terminate
@@ -1434,6 +1533,56 @@ prompt_on_error() {
             return 0  # Return code 0 = continue
             ;;
     esac
+}
+
+# Helper function: run a command/function with automatic retry on failure
+# Usage: run_with_retry "description" function_name arg1 arg2 ...
+# Returns 0 on success, 1 on quit, 2 on skip/continue
+run_with_retry() {
+    local description=$1
+    shift
+    local func_and_args=("$@")
+    
+    while true; do
+        "${func_and_args[@]}"
+        local status=$?
+        
+        if [ $status -eq 0 ]; then
+            return 0  # Success
+        fi
+        
+        # Failed - prompt for retry
+        echo ""
+        echo -e "${RED}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║                              STEP FAILED                                   ║${NC}"
+        echo -e "${RED}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        log_error "Failed: ${description}"
+        echo ""
+        echo -e "${YELLOW}This may be due to a connection issue or temporary error.${NC}"
+        echo -e "${YELLOW}What would you like to do?${NC}"
+        echo -e "  ${GREEN}[r]${NC} Retry this step (recommended for connection errors)"
+        echo -e "  ${YELLOW}[c]${NC} Continue / skip this step"
+        echo -e "  ${RED}[q]${NC} Quit entire process"
+        echo -n "  Your choice: "
+        
+        read -r choice
+        case $choice in
+            r|R|"")
+                log_info "Retrying: ${description}..."
+                echo ""
+                # Loop continues, will re-execute
+                ;;
+            q|Q)
+                log_warning "Terminating process..."
+                return 1  # Quit
+                ;;
+            c|C|*)
+                log_info "Skipping: ${description}"
+                return 2  # Skip/continue
+                ;;
+        esac
+    done
 }
 
 # =============================================================================
@@ -1724,9 +1873,9 @@ global_upgrade_lawyer() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_lawyerorg
-        approve_chaincode "lawyer-registrar-channel" "lawyer" "$LAWYER_PACKAGE_ID"
-        approve_chaincode "stampreporter-lawyer-channel" "lawyer" "$LAWYER_PACKAGE_ID"
-        approve_chaincode "benchclerk-lawyer-channel" "lawyer" "$LAWYER_PACKAGE_ID"
+        approve_chaincode "lawyer-registrar-channel" "lawyer" "$LAWYER_CC_PACKAGE_ID"
+        approve_chaincode "stampreporter-lawyer-channel" "lawyer" "$LAWYER_CC_PACKAGE_ID"
+        approve_chaincode "benchclerk-lawyer-channel" "lawyer" "$LAWYER_CC_PACKAGE_ID"
     fi
     
     # Step 3: Install on RegistrarsOrg
@@ -1745,7 +1894,7 @@ global_upgrade_lawyer() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_registrarorg
-        approve_chaincode "lawyer-registrar-channel" "lawyer" "$LAWYER_PACKAGE_ID"
+        approve_chaincode "lawyer-registrar-channel" "lawyer" "$LAWYER_CC_PACKAGE_ID"
     fi
     
     # Step 5: Install on StampReportersOrg
@@ -1764,7 +1913,7 @@ global_upgrade_lawyer() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_stampreporterorg
-        approve_chaincode "stampreporter-lawyer-channel" "lawyer" "$LAWYER_PACKAGE_ID"
+        approve_chaincode "stampreporter-lawyer-channel" "lawyer" "$LAWYER_CC_PACKAGE_ID"
     fi
     
     # Step 7: Install on BenchClerksOrg
@@ -1784,7 +1933,7 @@ global_upgrade_lawyer() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_benchclerkorg
-        approve_chaincode "benchclerk-lawyer-channel" "lawyer" "$LAWYER_PACKAGE_ID"
+        approve_chaincode "benchclerk-lawyer-channel" "lawyer" "$LAWYER_CC_PACKAGE_ID"
         
         # Commit from owner org
         switch_to_lawyerorg
@@ -1824,8 +1973,8 @@ global_upgrade_registrar() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_registrarorg
-        approve_chaincode "lawyer-registrar-channel" "registrar" "$REGISTRAR_PACKAGE_ID"
-        approve_chaincode "registrar-stampreporter-channel" "registrar" "$REGISTRAR_PACKAGE_ID"
+        approve_chaincode "lawyer-registrar-channel" "registrar" "$REGISTRAR_CC_PACKAGE_ID"
+        approve_chaincode "registrar-stampreporter-channel" "registrar" "$REGISTRAR_CC_PACKAGE_ID"
     fi
     
     # Step 3: Install on LawyersOrg
@@ -1844,7 +1993,7 @@ global_upgrade_registrar() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_lawyerorg
-        approve_chaincode "lawyer-registrar-channel" "registrar" "$REGISTRAR_PACKAGE_ID"
+        approve_chaincode "lawyer-registrar-channel" "registrar" "$REGISTRAR_CC_PACKAGE_ID"
     fi
     
     # Step 5: Install on StampReportersOrg
@@ -1864,7 +2013,7 @@ global_upgrade_registrar() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_stampreporterorg
-        approve_chaincode "registrar-stampreporter-channel" "registrar" "$REGISTRAR_PACKAGE_ID"
+        approve_chaincode "registrar-stampreporter-channel" "registrar" "$REGISTRAR_CC_PACKAGE_ID"
         
         # Commit from owner org
         switch_to_registrarorg
@@ -1904,9 +2053,9 @@ global_upgrade_stampreporter() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_stampreporterorg
-        approve_chaincode "registrar-stampreporter-channel" "stampreporter" "$STAMPREPORTER_PACKAGE_ID"
-        approve_chaincode "stampreporter-lawyer-channel" "stampreporter" "$STAMPREPORTER_PACKAGE_ID"
-        approve_chaincode "stampreporter-benchclerk-channel" "stampreporter" "$STAMPREPORTER_PACKAGE_ID"
+        approve_chaincode "registrar-stampreporter-channel" "stampreporter" "$STAMPREPORTER_CC_PACKAGE_ID"
+        approve_chaincode "stampreporter-lawyer-channel" "stampreporter" "$STAMPREPORTER_CC_PACKAGE_ID"
+        approve_chaincode "stampreporter-benchclerk-channel" "stampreporter" "$STAMPREPORTER_CC_PACKAGE_ID"
     fi
     
     # Step 3: Install on RegistrarsOrg
@@ -1925,7 +2074,7 @@ global_upgrade_stampreporter() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_registrarorg
-        approve_chaincode "registrar-stampreporter-channel" "stampreporter" "$STAMPREPORTER_PACKAGE_ID"
+        approve_chaincode "registrar-stampreporter-channel" "stampreporter" "$STAMPREPORTER_CC_PACKAGE_ID"
     fi
     
     # Step 5: Install on LawyersOrg
@@ -1944,7 +2093,7 @@ global_upgrade_stampreporter() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_lawyerorg
-        approve_chaincode "stampreporter-lawyer-channel" "stampreporter" "$STAMPREPORTER_PACKAGE_ID"
+        approve_chaincode "stampreporter-lawyer-channel" "stampreporter" "$STAMPREPORTER_CC_PACKAGE_ID"
     fi
     
     # Step 7: Install on BenchClerksOrg
@@ -1964,7 +2113,7 @@ global_upgrade_stampreporter() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_benchclerkorg
-        approve_chaincode "stampreporter-benchclerk-channel" "stampreporter" "$STAMPREPORTER_PACKAGE_ID"
+        approve_chaincode "stampreporter-benchclerk-channel" "stampreporter" "$STAMPREPORTER_CC_PACKAGE_ID"
         
         # Commit from owner org
         switch_to_stampreporterorg
@@ -2005,9 +2154,9 @@ global_upgrade_benchclerk() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_benchclerkorg
-        approve_chaincode "stampreporter-benchclerk-channel" "benchclerk" "$BENCHCLERK_PACKAGE_ID"
-        approve_chaincode "benchclerk-judge-channel" "benchclerk" "$BENCHCLERK_PACKAGE_ID"
-        approve_chaincode "benchclerk-lawyer-channel" "benchclerk" "$BENCHCLERK_PACKAGE_ID"
+        approve_chaincode "stampreporter-benchclerk-channel" "benchclerk" "$BENCHCLERK_CC_PACKAGE_ID"
+        approve_chaincode "benchclerk-judge-channel" "benchclerk" "$BENCHCLERK_CC_PACKAGE_ID"
+        approve_chaincode "benchclerk-lawyer-channel" "benchclerk" "$BENCHCLERK_CC_PACKAGE_ID"
     fi
     
     # Step 3: Install on StampReportersOrg
@@ -2026,7 +2175,7 @@ global_upgrade_benchclerk() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_stampreporterorg
-        approve_chaincode "stampreporter-benchclerk-channel" "benchclerk" "$BENCHCLERK_PACKAGE_ID"
+        approve_chaincode "stampreporter-benchclerk-channel" "benchclerk" "$BENCHCLERK_CC_PACKAGE_ID"
     fi
     
     # Step 5: Install on JudgesOrg
@@ -2045,7 +2194,7 @@ global_upgrade_benchclerk() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_judgeorg
-        approve_chaincode "benchclerk-judge-channel" "benchclerk" "$BENCHCLERK_PACKAGE_ID"
+        approve_chaincode "benchclerk-judge-channel" "benchclerk" "$BENCHCLERK_CC_PACKAGE_ID"
     fi
     
     # Step 7: Install on LawyersOrg
@@ -2065,7 +2214,7 @@ global_upgrade_benchclerk() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_lawyerorg
-        approve_chaincode "benchclerk-lawyer-channel" "benchclerk" "$BENCHCLERK_PACKAGE_ID"
+        approve_chaincode "benchclerk-lawyer-channel" "benchclerk" "$BENCHCLERK_CC_PACKAGE_ID"
         
         # Commit from owner org
         switch_to_benchclerkorg
@@ -2104,7 +2253,7 @@ global_upgrade_judge() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_judgeorg
-        approve_chaincode "benchclerk-judge-channel" "judge" "$JUDGE_PACKAGE_ID"
+        approve_chaincode "benchclerk-judge-channel" "judge" "$JUDGE_CC_PACKAGE_ID"
     fi
     
     # Step 3: Install on BenchClerksOrg
@@ -2124,7 +2273,7 @@ global_upgrade_judge() {
     if [ $result -eq 2 ]; then return 0; fi
     if [ $result -eq 0 ]; then
         switch_to_benchclerkorg
-        approve_chaincode "benchclerk-judge-channel" "judge" "$JUDGE_PACKAGE_ID"
+        approve_chaincode "benchclerk-judge-channel" "judge" "$JUDGE_CC_PACKAGE_ID"
         
         # Commit from owner org
         switch_to_judgeorg
@@ -2181,9 +2330,10 @@ automate_org_upgrade() {
     
     log_section "Automating upgrade for ${org}Org"
     
-    # Switch to org
+    # Switch to org (switch_org expects names like 'judgeorg', 'lawyerorg', etc.)
+    local org_switch_name="${org}org"
     log_info "Switching to ${org}Org..."
-    switch_org "$org"
+    switch_org "$org_switch_name"
     
     # Install chaincode
     log_info "Installing ${chaincode_name} chaincode on ${org}Org..."
@@ -2268,6 +2418,11 @@ upgrade_lawyer_chaincode() {
     
     switch_to_lawyerorg
     
+    # Install new package on owner org first
+    local lawyer_pkg=$(get_latest_package "lawyer")
+    log_section "Installing lawyer chaincode on LawyersOrg (owner)"
+    install_chaincode_interactive "lawyer" "$lawyer_pkg"
+    
     # lawyer-registrar-channel
     log_section "Upgrading lawyer on lawyer-registrar-channel"
     approve_chaincode "lawyer-registrar-channel" "lawyer" "$LAWYER_CC_PACKAGE_ID"
@@ -2342,6 +2497,11 @@ upgrade_registrar_chaincode() {
     
     switch_to_registrarorg
     
+    # Install new package on owner org first
+    local registrar_pkg=$(get_latest_package "registrar")
+    log_section "Installing registrar chaincode on RegistrarsOrg (owner)"
+    install_chaincode_interactive "registrar" "$registrar_pkg"
+    
     # lawyer-registrar-channel
     log_section "Upgrading registrar on lawyer-registrar-channel"
     approve_chaincode "lawyer-registrar-channel" "registrar" "$REGISTRAR_CC_PACKAGE_ID"
@@ -2400,6 +2560,11 @@ upgrade_stampreporter_chaincode() {
     log_info "Other orgs needing approval: RegistrarsOrg, LawyersOrg, BenchClerksOrg"
     
     switch_to_stampreporterorg
+    
+    # Install new package on owner org first
+    local stampreporter_pkg=$(get_latest_package "stampreporter")
+    log_section "Installing stampreporter chaincode on StampReportersOrg (owner)"
+    install_chaincode_interactive "stampreporter" "$stampreporter_pkg"
     
     # registrar-stampreporter-channel
     log_section "Upgrading stampreporter on registrar-stampreporter-channel"
@@ -2475,6 +2640,11 @@ upgrade_benchclerk_chaincode() {
     
     switch_to_benchclerkorg
     
+    # Install new package on owner org first
+    local benchclerk_pkg=$(get_latest_package "benchclerk")
+    log_section "Installing benchclerk chaincode on BenchClerksOrg (owner)"
+    install_chaincode_interactive "benchclerk" "$benchclerk_pkg"
+    
     # stampreporter-benchclerk-channel
     log_section "Upgrading benchclerk on stampreporter-benchclerk-channel"
     approve_chaincode "stampreporter-benchclerk-channel" "benchclerk" "$BENCHCLERK_CC_PACKAGE_ID"
@@ -2548,6 +2718,11 @@ upgrade_judge_chaincode() {
     log_info "Other orgs needing approval: BenchClerksOrg"
     
     switch_to_judgeorg
+    
+    # Install new package on owner org first
+    local judge_pkg=$(get_latest_package "judge")
+    log_section "Installing judge chaincode on JudgesOrg (owner)"
+    install_chaincode_interactive "judge" "$judge_pkg"
     
     # benchclerk-judge-channel
     log_section "Upgrading judge on benchclerk-judge-channel"

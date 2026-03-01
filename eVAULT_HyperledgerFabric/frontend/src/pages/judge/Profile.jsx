@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -10,10 +10,8 @@ import {
   Card,
   CardContent,
   Divider,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
+  CircularProgress,
+  Alert,
   Chip,
 } from '@mui/material';
 import {
@@ -26,61 +24,122 @@ import {
   Phone as PhoneIcon,
   LocationOn as LocationOnIcon,
   Work as WorkIcon,
-  School as SchoolIcon,
   Badge as BadgeIcon,
 } from '@mui/icons-material';
+import { getUserData } from '../../utils/auth';
 
 const Profile = () => {
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [error, setError] = useState(null);
+  const user = getUserData();
+  const userId = user?._id;
+
   const [profile, setProfile] = useState({
-    name: 'Hon. Justice Sarah Mitchell',
-    designation: 'Senior Judge',
-    courtName: 'High Court of Maharashtra',
-    email: 'justice.mitchell@courts.gov.in',
-    phone: '+91 98765 43210',
-    location: 'Mumbai, Maharashtra',
-    experience: '15 years',
-    specialization: 'Civil Law',
-    education: [
-      'LL.B., Government Law College, Mumbai',
-      'LL.M. in Constitutional Law, National Law School of India University',
-    ],
-    expertise: [
-      'Constitutional Law',
-      'Civil Law',
-      'Property Law',
-      'Contract Law',
-      'Family Law',
-    ],
-    recentActivity: [
-      {
-        type: 'Case Ruling',
-        description: 'Property Dispute Resolution',
-        date: '2025-03-05',
-      },
-      {
-        type: 'Case Review',
-        description: 'Contract Violation Case',
-        date: '2025-03-04',
-      },
-      {
-        type: 'Document Verification',
-        description: 'Family Property Division',
-        date: '2025-03-03',
-      },
-    ],
+    name: '',
+    designation: '',
+    courtName: '',
+    email: '',
+    phone: '',
+    location: '',
+    experience: '',
+    specialization: '',
+    appointmentDate: '',
+    judgementExpertise: '',
   });
 
   const [editedProfile, setEditedProfile] = useState({ ...profile });
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        if (!userId) throw new Error('User data not found.');
+
+        const res = await fetch(`http://localhost:3000/get-profile/${userId}`);
+        if (!res.ok) throw new Error('Unable to load profile');
+        const data = await res.json();
+
+        if (data.profile) {
+          const p = data.profile;
+          const profileData = {
+            name: p.name || p.username || user?.username || '',
+            designation: p.designation || 'Judge',
+            courtName: p.courtName || p.courtAssigned || user?.courtAssigned || '',
+            email: p.email || user?.email || '',
+            phone: p.phone || p.phone_number || user?.phone_number || '',
+            location: p.location || p.address || '',
+            experience: p.experience || '',
+            specialization: p.specialization || p.judgementExpertise || user?.judgementExpertise || '',
+            appointmentDate: p.appointmentDate || user?.appointmentDate || '',
+            judgementExpertise: p.judgementExpertise || user?.judgementExpertise || '',
+          };
+          setProfile(profileData);
+          setEditedProfile(profileData);
+        }
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+        // Fallback to session data
+        if (user) {
+          const fallback = {
+            name: user.username || '',
+            designation: 'Judge',
+            courtName: user.courtAssigned || '',
+            email: user.email || '',
+            phone: user.phone_number || '',
+            location: user.address || '',
+            experience: '',
+            specialization: user.judgementExpertise || '',
+            appointmentDate: user.appointmentDate || '',
+            judgementExpertise: user.judgementExpertise || '',
+          };
+          setProfile(fallback);
+          setEditedProfile(fallback);
+        } else {
+          setError(err.message);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [userId]);
 
   const handleEdit = () => {
     setIsEditing(true);
     setEditedProfile({ ...profile });
   };
 
-  const handleSave = () => {
-    setProfile({ ...editedProfile });
-    setIsEditing(false);
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+
+      const payload = {
+        ...editedProfile,
+        userId: userId,
+      };
+
+      const res = await fetch('http://localhost:3000/lawyer/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Failed to save profile');
+
+      setProfile({ ...editedProfile });
+      setIsEditing(false);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      setError('Failed to save profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -95,8 +154,32 @@ const Profile = () => {
     });
   };
 
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Parse expertise into tags
+  const expertiseTags = profile.judgementExpertise
+    ? profile.judgementExpertise.split(',').map(e => e.trim()).filter(Boolean)
+    : [];
+
   return (
     <Box sx={{ p: 3 }}>
+      {showSuccess && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          Profile updated successfully!
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
       <Grid container spacing={3}>
         {/* Profile Header */}
         <Grid item xs={12}>
@@ -122,10 +205,10 @@ const Profile = () => {
             </Avatar>
             <Box>
               <Typography variant="h4" gutterBottom>
-                {profile.name}
+                {profile.name || 'Judge'}
               </Typography>
               <Typography variant="h6">
-                {profile.designation} • {profile.courtName}
+                {profile.designation} {profile.courtName ? `• ${profile.courtName}` : ''}
               </Typography>
             </Box>
           </Paper>
@@ -143,10 +226,10 @@ const Profile = () => {
                   </IconButton>
                 ) : (
                   <Box>
-                    <IconButton onClick={handleSave} color="primary">
-                      <SaveIcon />
+                    <IconButton onClick={handleSave} color="primary" disabled={saving}>
+                      {saving ? <CircularProgress size={20} /> : <SaveIcon />}
                     </IconButton>
-                    <IconButton onClick={handleCancel} color="error">
+                    <IconButton onClick={handleCancel} color="error" disabled={saving}>
                       <CancelIcon />
                     </IconButton>
                   </Box>
@@ -170,8 +253,7 @@ const Profile = () => {
                     fullWidth
                     label="Email"
                     value={isEditing ? editedProfile.email : profile.email}
-                    onChange={handleChange('email')}
-                    disabled={!isEditing}
+                    disabled
                     InputProps={{
                       startAdornment: <EmailIcon sx={{ mr: 1 }} />,
                     }}
@@ -204,9 +286,9 @@ const Profile = () => {
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="Experience"
-                    value={isEditing ? editedProfile.experience : profile.experience}
-                    onChange={handleChange('experience')}
+                    label="Court Assigned"
+                    value={isEditing ? editedProfile.courtName : profile.courtName}
+                    onChange={handleChange('courtName')}
                     disabled={!isEditing}
                     InputProps={{
                       startAdornment: <WorkIcon sx={{ mr: 1 }} />,
@@ -216,7 +298,7 @@ const Profile = () => {
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="Specialization"
+                    label="Specialization / Expertise"
                     value={isEditing ? editedProfile.specialization : profile.specialization}
                     onChange={handleChange('specialization')}
                     disabled={!isEditing}
@@ -225,73 +307,67 @@ const Profile = () => {
                     }}
                   />
                 </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Experience"
+                    value={isEditing ? editedProfile.experience : profile.experience}
+                    onChange={handleChange('experience')}
+                    disabled={!isEditing}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Appointment Date"
+                    value={isEditing ? editedProfile.appointmentDate : profile.appointmentDate}
+                    disabled
+                  />
+                </Grid>
               </Grid>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Education and Expertise */}
+        {/* Expertise Tags */}
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Education
+                Areas of Expertise
               </Typography>
-              <List dense>
-                {profile.education.map((edu, index) => (
-                  <ListItem key={index}>
-                    <ListItemIcon>
-                      <SchoolIcon />
-                    </ListItemIcon>
-                    <ListItemText primary={edu} />
-                  </ListItem>
-                ))}
-              </List>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {expertiseTags.length > 0 ? (
+                  expertiseTags.map((exp, index) => (
+                    <Chip
+                      key={index}
+                      label={exp}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ))
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No expertise tags set. Edit your profile to add your areas of expertise.
+                  </Typography>
+                )}
+              </Box>
             </CardContent>
           </Card>
 
           <Card sx={{ mt: 2 }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Areas of Expertise
+                Designation
               </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {profile.expertise.map((exp, index) => (
-                  <Chip
-                    key={index}
-                    label={exp}
-                    color="primary"
-                    variant="outlined"
-                  />
-                ))}
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Recent Activity */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Recent Activity
-              </Typography>
-              <List>
-                {profile.recentActivity.map((activity, index) => (
-                  <React.Fragment key={index}>
-                    {index > 0 && <Divider />}
-                    <ListItem>
-                      <ListItemIcon>
-                        <GavelIcon />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={activity.description}
-                        secondary={`${activity.type} • ${activity.date}`}
-                      />
-                    </ListItem>
-                  </React.Fragment>
-                ))}
-              </List>
+              <TextField
+                fullWidth
+                label="Designation"
+                value={isEditing ? editedProfile.designation : profile.designation}
+                onChange={handleChange('designation')}
+                disabled={!isEditing}
+                sx={{ mb: 2 }}
+              />
             </CardContent>
           </Card>
         </Grid>

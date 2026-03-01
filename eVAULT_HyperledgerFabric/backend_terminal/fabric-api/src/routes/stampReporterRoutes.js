@@ -95,6 +95,13 @@ router.post('/case/verify', stampReporterController.verifyCaseAndSyncToLawyer);
 router.post('/case/reject', stampReporterController.rejectCaseAndSyncToLawyer);
 
 /**
+ * @route   POST /api/stampreporter/case/on-hold
+ * @desc    Put case on hold and sync status to lawyer channel (cross-channel)
+ * @access  Public
+ */
+router.post('/case/on-hold', stampReporterController.putCaseOnHold);
+
+/**
  * @route   POST /api/stampreporter/case/validate-and-forward
  * @desc    SEQUENTIAL: Validate documents AND forward to bench clerk in one call
  *          Step 1: ValidateDocuments on registrar-stampreporter-channel

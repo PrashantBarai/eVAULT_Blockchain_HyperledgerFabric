@@ -1,4 +1,4 @@
-package judge
+package main
 
 import (
 	"encoding/json"
@@ -481,9 +481,9 @@ func (s *JudgeContract) FetchAndStoreCaseFromBenchClerkChannel(ctx contractapi.T
 		return nil, fmt.Errorf("this function can only be called by members of JudgesOrg")
 	}
 
-	// Invoke the judge chaincode on the benchclerk-judge-channel to get the case
+	// Invoke the benchclerk chaincode on the benchclerk-judge-channel to get the case from benchclerk's namespace
 	args := [][]byte{[]byte("GetCaseById"), []byte(caseID)}
-	response := ctx.GetStub().InvokeChaincode("judge", args, "benchclerk-judge-channel")
+	response := ctx.GetStub().InvokeChaincode("benchclerk", args, "benchclerk-judge-channel")
 
 	// Check the response status - 200 is OK in contractapi
 	if response.Status != 200 {
@@ -604,6 +604,51 @@ func (s *JudgeContract) GetJudgedCases(ctx contractapi.TransactionContextInterfa
 	}
 	log.Printf("Returning %d judged cases", len(judgedCases))
 	return judgedCases, nil
+}
+
+// GetAllCases returns all cases from judge's namespace
+func (s *JudgeContract) GetAllCases(ctx contractapi.TransactionContextInterface) ([]*Case, error) {
+	log.Printf("GetAllCases called")
+
+	resultsIterator, err := ctx.GetStub().GetStateByRange("CASE_", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state by range: %v", err)
+	}
+	defer resultsIterator.Close()
+
+	var cases []*Case
+	for resultsIterator.HasNext() {
+		queryResult, err := resultsIterator.Next()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get the next query result: %v", err)
+		}
+
+		var caseObj Case
+		err = json.Unmarshal(queryResult.Value, &caseObj)
+		if err != nil {
+			log.Printf("Failed to unmarshal case, skipping: %v", err)
+			continue
+		}
+
+		// Initialize empty arrays if they are null
+		if caseObj.Documents == nil {
+			caseObj.Documents = make([]Document, 0)
+		}
+		if caseObj.History == nil {
+			caseObj.History = make([]HistoryItem, 0)
+		}
+		if caseObj.AssociatedLawyers == nil {
+			caseObj.AssociatedLawyers = make([]string, 0)
+		}
+		if caseObj.Hearings == nil {
+			caseObj.Hearings = make([]Hearing, 0)
+		}
+
+		cases = append(cases, &caseObj)
+	}
+
+	log.Printf("Returning %d cases", len(cases))
+	return cases, nil
 }
 
 func main() {

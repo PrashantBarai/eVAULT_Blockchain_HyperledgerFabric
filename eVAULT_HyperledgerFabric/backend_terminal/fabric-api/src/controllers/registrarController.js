@@ -1,6 +1,10 @@
 const { connectToNetwork, disconnectFromNetwork } = require('../fabric/network');
 const config = require('../config/config');
 const logger = require('../utils/logger');
+const axios = require('axios');
+
+// Client backend URL for MongoDB operations
+const CLIENT_BACKEND_URL = 'http://localhost:3000';
 
 /**
  * Controller for Registrar Contract functions
@@ -504,42 +508,59 @@ const registrarController = {
             });
 
             const forwardChannelName = fabricConfig.forwardChannel || 'registrar-stampreporter-channel';
-            logger.info(`[Step 2/2] Storing case ${caseID} on ${forwardChannelName}`);
+            logger.info(`[Step 2/2] Storing case ${caseID} on ${forwardChannelName} via STAMPREPORTER chaincode namespace`);
             
-            // Check if case already exists on the target channel
-            const connection2 = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                forwardChannelName,  // registrar-stampreporter-channel
-                fabricConfig.chaincodeName // registrar
-            );
-            gateway2 = connection2.gateway;
+            // CRITICAL: Must use the STAMPREPORTER chaincode (not registrar) because
+            // each chaincode has its own namespace on the same channel.
+            // The stampreporter dashboard reads from the stampreporter namespace,
+            // so we must write to that namespace via the stampreporter chaincode.
+            // stampreporter.go StoreCase allows RegistrarsOrg to call it.
+            const stampreporterChaincode = 'stampreporter';
+            
+            // Retry logic for Step 2 - DiscoveryService can intermittently fail on Microfab
+            const MAX_RETRIES = 3;
+            let lastError = null;
+            
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    if (gateway2) {
+                        await disconnectFromNetwork(gateway2);
+                        gateway2 = null;
+                    }
+                    
+                    logger.info(`[Step 2/2] Connection attempt ${attempt}/${MAX_RETRIES} to ${forwardChannelName} using ${stampreporterChaincode} chaincode`);
+                    
+                    const connection2 = await connectToNetwork(
+                        fabricConfig.org, 
+                        fabricConfig.user, 
+                        forwardChannelName,       // registrar-stampreporter-channel
+                        stampreporterChaincode     // stampreporter chaincode = stampreporter namespace
+                    );
+                    gateway2 = connection2.gateway;
 
-            let caseExistsOnTargetChannel = false;
-            try {
-                await connection2.contract.evaluateTransaction('GetCaseById', caseID);
-                caseExistsOnTargetChannel = true;
-                logger.info(`[Step 2/2] Case already exists on ${forwardChannelName}, will update`);
-            } catch (err) {
-                logger.info(`[Step 2/2] Case does not exist on ${forwardChannelName}, will create new`);
+                    // StoreCase uses PutState which is an upsert - always use StoreCase
+                    logger.info(`[Step 2/2] Storing case on ${forwardChannelName} via stampreporter chaincode`);
+                    await connection2.contract.submitTransaction(
+                        'StoreCase', 
+                        JSON.stringify(caseData)
+                    );
+                    
+                    // Success - break out of retry loop
+                    lastError = null;
+                    break;
+                } catch (retryErr) {
+                    lastError = retryErr;
+                    logger.warn(`[Step 2/2] Attempt ${attempt}/${MAX_RETRIES} failed: ${retryErr.message}`);
+                    if (attempt < MAX_RETRIES) {
+                        const delay = attempt * 2000; // 2s, 4s backoff
+                        logger.info(`[Step 2/2] Retrying in ${delay/1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
             }
-
-            // Store or update the case on registrar-stampreporter-channel
-            if (caseExistsOnTargetChannel) {
-                // Use UpdateCase if it exists (retry scenario)
-                logger.info(`[Step 2/2] Updating existing case on ${forwardChannelName}`);
-                await connection2.contract.submitTransaction(
-                    'UpdateCase', 
-                    caseID,
-                    JSON.stringify(caseData)
-                );
-            } else {
-                // Use StoreCase - generic storage without validation
-                logger.info(`[Step 2/2] Storing new case on ${forwardChannelName}`);
-                await connection2.contract.submitTransaction(
-                    'StoreCase', 
-                    JSON.stringify(caseData)
-                );
+            
+            if (lastError) {
+                throw lastError; // All retries exhausted - will trigger rollback
             }
             
             results.forward = {
@@ -549,9 +570,107 @@ const registrarController = {
             logger.info(`[Step 2/2] ✓ Case ${caseID} stored on ${forwardChannelName} successfully`);
             
             // ================================================================
-            // ALL BLOCKCHAIN OPERATIONS COMPLETE
+            // STEP 3: Update lawyer-registrar-channel with forwarded status
+            // So lawyers can see the case has been forwarded
+            // CRITICAL: Must use the LAWYER chaincode (not registrar) because
+            // the lawyer dashboard's GetAllCases reads from the lawyer namespace.
+            // Each chaincode has its own namespace on the same channel.
+            // ================================================================
+            logger.info(`[Step 3/3] Updating lawyer-registrar-channel via LAWYER chaincode namespace`);
+            
+            // Reconnect to lawyer-registrar-channel
+            await disconnectFromNetwork(gateway2);
+            gateway2 = null;
+            
+            // Update the case with forwarded status
+            caseData.status = 'FORWARDED_TO_STAMPREPORTER';
+            caseData.currentOrg = 'StampReportersOrg';
+            caseData.lastModified = new Date().toISOString();
+            
+            // Add forwarded history entry
+            caseData.history.push({
+                status: 'FORWARDED_TO_STAMPREPORTER',
+                organization: 'RegistrarsOrg',
+                timestamp: new Date().toISOString(),
+                comments: 'Case forwarded to stamp reporter organization'
+            });
+            
+            // Retry logic for Step 3 as well
+            let step3Error = null;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    if (gateway1) {
+                        await disconnectFromNetwork(gateway1);
+                        gateway1 = null;
+                    }
+                    
+                    // Use LAWYER chaincode config to write to the lawyer namespace
+                    const lawyerConfig = config.fabric.lawyer;
+                    const connection3 = await connectToNetwork(
+                        lawyerConfig.org, 
+                        lawyerConfig.user, 
+                        'lawyer-registrar-channel',  // Same channel
+                        'lawyer'                     // LAWYER chaincode = lawyer namespace
+                    );
+                    gateway1 = connection3.gateway;
+                    
+                    // Use StoreCase on the LAWYER chaincode to update the lawyer namespace
+                    await connection3.contract.submitTransaction(
+                        'StoreCase',
+                        JSON.stringify(caseData)
+                    );
+                    
+                    step3Error = null;
+                    break;
+                } catch (retryErr) {
+                    step3Error = retryErr;
+                    logger.warn(`[Step 3/3] Attempt ${attempt}/${MAX_RETRIES} failed: ${retryErr.message}`);
+                    if (attempt < MAX_RETRIES) {
+                        const delay = attempt * 2000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            }
+            
+            if (step3Error) {
+                // Step 3 failed but Step 2 succeeded - case IS on stampreporter channel
+                // Log warning but don't rollback - lawyer can still see via getCaseById aggregation
+                logger.warn(`[Step 3/3] Failed to update lawyer namespace: ${step3Error.message}. Case is on stampreporter channel.`);
+            } else {
+                logger.info(`[Step 3/3] ✓ Updated lawyer namespace on lawyer-registrar-channel with forwarded status`);
+            }
+            
+            // ================================================================
+            // ALL BLOCKCHAIN OPERATIONS COMPLETE - NOW UPDATE MONGODB
             // ================================================================
             logger.info(`All blockchain operations complete for case ${caseID}`);
+            
+            // CRITICAL: Update MongoDB ONLY after blockchain success
+            try {
+                await axios.post(`${CLIENT_BACKEND_URL}/update-case-status`, {
+                    caseID: caseID,
+                    status: 'FORWARDED_TO_STAMPREPORTER',
+                    currentOrg: 'StampReportersOrg',
+                    timeline: [
+                        {
+                            status: 'VERIFIED_BY_REGISTRAR',
+                            organization: 'RegistrarsOrg',
+                            timestamp: new Date().toISOString(),
+                            comments: verificationDetails.comments || 'Case verified by registrar'
+                        },
+                        {
+                            status: 'FORWARDED_TO_STAMPREPORTER',
+                            organization: 'RegistrarsOrg',
+                            timestamp: new Date().toISOString(),
+                            comments: 'Case forwarded to stamp reporter organization'
+                        }
+                    ]
+                });
+                logger.info(`✓ MongoDB updated successfully for case ${caseID}`);
+            } catch (mongoError) {
+                logger.warn(`MongoDB update failed (non-critical): ${mongoError.message}`);
+                // Don't fail the request - blockchain is source of truth
+            }
             
             return res.status(200).json({
                 success: true,
@@ -568,6 +687,9 @@ const registrarController = {
             
             // ================================================================
             // CRITICAL: REVERT Step 1 if Step 2 failed
+            // Use StoreCase to reset status to PENDING_REGISTRAR_REVIEW instead of
+            // VerifyCase(isVerified=false) which would create a REJECTED_BY_REGISTRAR
+            // history entry on-chain. StoreCase overwrites the entire case state cleanly.
             // ================================================================
             if (results.verify.success && !results.forward.success) {
                 logger.warn(`[ROLLBACK] Step 2 failed, reverting Step 1 verification...`);
@@ -581,21 +703,32 @@ const registrarController = {
                         config.fabric.registrar.chaincodeName
                     );
                     
-                    // Revert to PENDING_REGISTRAR_REVIEW status
-                    const revertDetails = {
-                        isVerified: false,
-                        comments: 'Verification reverted due to forward failure - please retry',
-                        department: ''
-                    };
+                    // Get the current case state from registrar namespace
+                    const currentResult = await revertConnection.contract.evaluateTransaction('GetCaseById', caseID);
+                    const currentState = JSON.parse(currentResult.toString());
                     
+                    // Reset status back to pending without adding REJECTED history
+                    currentState.status = 'PENDING_REGISTRAR_REVIEW';
+                    currentState.currentOrg = 'RegistrarsOrg';
+                    currentState.lastModified = new Date().toISOString();
+                    
+                    // Add a clean rollback history entry (not REJECTED)
+                    if (!currentState.history) currentState.history = [];
+                    currentState.history.push({
+                        status: 'PENDING_REGISTRAR_REVIEW',
+                        organization: 'RegistrarsOrg',
+                        timestamp: new Date().toISOString(),
+                        comments: 'Verification rolled back due to forward failure - please retry'
+                    });
+                    
+                    // Use StoreCase to overwrite cleanly (no REJECTED status)
                     await revertConnection.contract.submitTransaction(
-                        'VerifyCase',
-                        caseID,
-                        JSON.stringify(revertDetails)
+                        'StoreCase',
+                        JSON.stringify(currentState)
                     );
                     
                     await disconnectFromNetwork(revertConnection.gateway);
-                    logger.info(`[ROLLBACK] ✓ Successfully reverted verification for case ${caseID}`);
+                    logger.info(`[ROLLBACK] ✓ Successfully reverted to PENDING_REGISTRAR_REVIEW for case ${caseID}`);
                     
                     return res.status(500).json({
                         success: false,

@@ -4,73 +4,51 @@ const benchClerkController = require('../controllers/benchClerkController');
 const router = express.Router();
 
 /**
- * @route   POST /api/benchclerk/case/forward-to-judge
- * @desc    Forward case to judge
- * @access  Public
+ * @route   GET /api/benchclerk/cases/pending
+ * @desc    Get pending cases from benchclerk namespace
  */
-router.post('/case/forward-to-judge', benchClerkController.forwardToJudge);
-
-/**
- * @route   PUT /api/benchclerk/case/update-hearing
- * @desc    Update hearing details
- * @access  Public
- */
-router.put('/case/update-hearing', benchClerkController.updateHearingDetails);
-
-/**
- * @route   POST /api/benchclerk/case/notify-lawyer
- * @desc    Notify lawyer
- * @access  Public
- */
-router.post('/case/notify-lawyer', benchClerkController.notifyLawyer);
-
-/**
- * @route   GET /api/benchclerk/case/details/:caseID
- * @desc    Get case details
- * @access  Public
- */
-router.get('/case/details/:caseID', benchClerkController.getCaseDetails);
+router.get('/cases/pending', benchClerkController.getPendingCases);
 
 /**
  * @route   GET /api/benchclerk/case/:caseID
- * @desc    Get case by ID
- * @access  Public
+ * @desc    Get case by ID from benchclerk namespace
  */
 router.get('/case/:caseID', benchClerkController.getCaseById);
 
 /**
- * @route   POST /api/benchclerk/case/store
- * @desc    Store case
- * @access  Public
+ * @route   GET /api/benchclerk/judges
+ * @desc    Get all judges
  */
-router.post('/case/store', benchClerkController.storeCase);
-
-/**
- * @route   POST /api/benchclerk/case/fetch-from-stampreporter
- * @desc    Fetch and store case from stamp reporter channel
- * @access  Public
- */
-router.post('/case/fetch-from-stampreporter', benchClerkController.fetchFromStampReporterChannel);
-
-/**
- * @route   POST /api/benchclerk/cases/fetch-from-judge
- * @desc    Fetch and store cases from judge channel
- * @access  Public
- */
-router.post('/cases/fetch-from-judge', benchClerkController.fetchFromJudgeChannel);
+router.get('/judges', benchClerkController.getAllJudges);
 
 /**
  * @route   GET /api/benchclerk/stats
  * @desc    Get case statistics
- * @access  Public
  */
 router.get('/stats', benchClerkController.queryStats);
 
 /**
- * @route   POST /api/benchclerk/case/forward-to-lawyer
- * @desc    Forward judged case to lawyer (cross-channel)
- * @access  Public
+ * @route   POST /api/benchclerk/case/forward-to-judge-and-sync
+ * @desc    Forward case to judge (namespace-aware cross-channel)
  */
-router.post('/case/forward-to-lawyer', benchClerkController.forwardCaseToLawyer);
+router.post('/case/forward-to-judge-and-sync', benchClerkController.forwardToJudgeAndSync);
+
+/**
+ * @route   GET /api/benchclerk/cases/judged
+ * @desc    Get judged cases from benchclerk-judge-channel
+ */
+router.get('/cases/judged', benchClerkController.getJudgedCases);
+
+/**
+ * @route   GET /api/benchclerk/case/judge-channel/:caseID
+ * @desc    Get case from benchclerk-judge-channel
+ */
+router.get('/case/judge-channel/:caseID', benchClerkController.getCaseFromJudgeChannel);
+
+/**
+ * @route   POST /api/benchclerk/case/confirm-decision
+ * @desc    Confirm judge decision and forward to lawyer (namespace-aware)
+ */
+router.post('/case/confirm-decision', benchClerkController.confirmDecisionAndForwardToLawyer);
 
 module.exports = router;

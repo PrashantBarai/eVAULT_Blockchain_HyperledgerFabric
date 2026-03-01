@@ -1,184 +1,114 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  TextField,
-  InputAdornment,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  IconButton,
-  CircularProgress,
-  Snackbar,
-  Alert,
+  Box, Paper, Typography, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, Button, TextField, InputAdornment, Dialog,
+  DialogTitle, DialogContent, DialogActions, IconButton, CircularProgress,
+  Snackbar, Alert, Chip, Grid, Card, CardContent,
 } from '@mui/material';
 import {
-  Search as SearchIcon,
-  Send as SendIcon,
-  Visibility as VisibilityIcon,
-  Close as CloseIcon,
+  Search as SearchIcon, Send as SendIcon, Visibility as VisibilityIcon,
+  Close as CloseIcon, Gavel as GavelIcon,
 } from '@mui/icons-material';
-import { getUserData, getAuthToken } from '../../utils/auth';
+import { getUserData } from '../../utils/auth';
 
-const CaseManagement = ({ userId }) => {
+const FABRIC_API = 'http://localhost:8000/api/benchclerk';
+
+const CaseManagement = () => {
   const [cases, setCases] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCase, setSelectedCase] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
+  const [openForwardDialog, setOpenForwardDialog] = useState(false);
+  const [judgeId, setJudgeId] = useState('');
   const [loading, setLoading] = useState(true);
   const [forwarding, setForwarding] = useState(false);
   const [error, setError] = useState('');
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
-  useEffect(() => {
-    const fetchCases = async () => {
-      try {
-        const user = getUserData();
-        if (!user) {
-          setError('User data not found.');
-          setLoading(false);
-          return;
-        }
+  const fetchCases = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${FABRIC_API}/cases/pending`);
+      if (!response.ok) throw new Error('Failed to fetch cases');
+      const data = await response.json();
+      setCases(data.data || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        const userIdToUse = userId || user._id;
-        if (!userIdToUse) {
-          setError('User ID is missing.');
-          setLoading(false);
-          return;
-        }
-
-        const response = await fetch(`http://localhost:8000/get-cases/${userIdToUse}`, {
-          method: 'GET',
-          // headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch cases');
-        }
-
-        const data = await response.json();
-        setCases(Array.isArray(data.cases) ? data.cases : []);
-      } catch (error) {
-        setError(error.message || 'Error fetching cases');
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCases();
-  }, [userId]);
+  useEffect(() => { fetchCases(); }, []);
 
   const handleViewCase = (caseData) => {
     setSelectedCase(caseData);
     setOpenDialog(true);
   };
 
-  const handleForwardToJudge = async (caseId) => {
-    if (!caseId) return;
-    
+  const handleOpenForward = (caseData) => {
+    setSelectedCase(caseData);
+    setJudgeId('');
+    setOpenForwardDialog(true);
+  };
+
+  const handleForwardToJudge = async () => {
+    if (!selectedCase?.id) return;
     try {
       setForwarding(true);
-      // const token = localStorage.getItem('token');
-      
-      const response = await fetch(`http://localhost:8000/case/${caseId}/send-to-judge`, {
+      const user = getUserData();
+      const response = await fetch(`${FABRIC_API}/case/forward-to-judge-and-sync`, {
         method: 'POST',
-        headers: {
-          // 'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseID: selectedCase.id,
+          assignmentDetails: {
+            judgeId: judgeId || 'JUDGE_DEFAULT',
+            assignedBy: user?.username || 'benchclerk',
+            assignedAt: new Date().toISOString(),
+          },
+        }),
       });
-
       if (!response.ok) {
-        throw new Error('Failed to forward case to judge');
+        const errData = await response.json();
+        throw new Error(errData.message || 'Failed to forward case');
       }
-
-      const result = await response.json();
-      
-      // Update the local state to reflect the changes
-      setCases(cases.map(c => {
-        if (c._id === caseId) {
-          return {
-            ...c,
-            judge_registrar: result.assigned_judge,
-            status: 'Sent to Judge'
-          };
-        }
-        return c;
-      }));
-
-      // Show success message
-      setSnackbar({
-        open: true,
-        message: `Case successfully forwarded to judge: ${result.assigned_judge}`,
-        severity: 'success'
-      });
-      
-    } catch (error) {
-      console.error('Error forwarding case:', error);
-      setSnackbar({
-        open: true,
-        message: `Error: ${error.message}`,
-        severity: 'error'
-      });
+      setSnackbar({ open: true, message: `Case ${selectedCase.id} forwarded to judge`, severity: 'success' });
+      setOpenForwardDialog(false);
+      setOpenDialog(false);
+      fetchCases();
+    } catch (err) {
+      setSnackbar({ open: true, message: err.message, severity: 'error' });
     } finally {
       setForwarding(false);
-      setOpenDialog(false);
     }
   };
 
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
+  const getStatusColor = (status) => {
+    const map = {
+      'PENDING_BENCHCLERK_REVIEW': 'warning', 'FORWARDED_TO_BENCHCLERK': 'info',
+      'FORWARDED_TO_JUDGE': 'success', 'PENDING_JUDGE_REVIEW': 'primary',
+    };
+    return map[status] || 'default';
   };
 
-  const filteredCases = cases.filter((case_) => {
-    return (
-      case_._id?.toString().toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.case_subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      case_.case_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (case_.judge_registrar?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-    );
+  const filteredCases = cases.filter((c) => {
+    const q = searchQuery.toLowerCase();
+    return (c.id?.toLowerCase().includes(q) || c.title?.toLowerCase().includes(q) ||
+      c.type?.toLowerCase().includes(q) || c.caseNumber?.toLowerCase().includes(q));
   });
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Case Management
-      </Typography>
+      <Typography variant="h4" gutterBottom>Case Management</Typography>
 
-      <TextField
-        fullWidth
-        variant="outlined"
-        placeholder="Search cases by ID, subject, type or judge..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        sx={{ mb: 3 }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-        }}
+      <TextField fullWidth variant="outlined" placeholder="Search cases by ID, title, type..."
+        value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} sx={{ mb: 3 }}
+        InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
       />
 
       {loading ? (
-        <Box display="flex" justifyContent="center">
-          <CircularProgress />
-        </Box>
+        <Box display="flex" justifyContent="center"><CircularProgress /></Box>
       ) : error ? (
         <Typography color="error">{error}</Typography>
       ) : (
@@ -189,50 +119,33 @@ const CaseManagement = ({ userId }) => {
                 <TableCell sx={{ color: 'white' }}>Case ID</TableCell>
                 <TableCell sx={{ color: 'white' }}>Title</TableCell>
                 <TableCell sx={{ color: 'white' }}>Type</TableCell>
-                <TableCell sx={{ color: 'white' }}>Registrar</TableCell>
-                <TableCell sx={{ color: 'white' }}>Judge</TableCell>
                 <TableCell sx={{ color: 'white' }}>Filed Date</TableCell>
                 <TableCell sx={{ color: 'white' }}>Status</TableCell>
                 <TableCell sx={{ color: 'white' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredCases.length > 0 ? (
-                filteredCases.map((case_) => (
-                  <TableRow key={case_._id}>
-                    <TableCell>{case_._id}</TableCell>
-                    <TableCell>{case_.case_subject}</TableCell>
-                    <TableCell>{case_.case_type}</TableCell>
-                    <TableCell>{case_.assigned_registrar || 'N/A'}</TableCell>
-                    <TableCell>{case_.judge_registrar || 'Not assigned'}</TableCell>
-                    <TableCell>{new Date(case_.filed_date).toLocaleDateString()}</TableCell>
-                    <TableCell>{case_.status || 'Pending'}</TableCell>
-                    <TableCell>
-                      <IconButton 
-                        onClick={() => handleViewCase(case_)} 
-                        sx={{ color: '#4a90e2' }}
-                        disabled={forwarding}
-                      >
-                        <VisibilityIcon />
-                      </IconButton>
-                      {!case_.judge_registrar && (
-                        <IconButton 
-                          onClick={() => handleForwardToJudge(case_._id)} 
-                          sx={{ color: '#8e44ad' }}
-                          disabled={forwarding}
-                        >
-                          {forwarding ? <CircularProgress size={24} /> : <SendIcon />}
-                        </IconButton>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No cases found
+              {filteredCases.length > 0 ? filteredCases.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>{c.caseNumber || c.id}</TableCell>
+                  <TableCell>{c.title || c.caseSubject}</TableCell>
+                  <TableCell>{c.type || 'N/A'}</TableCell>
+                  <TableCell>{c.filedDate ? new Date(c.filedDate).toLocaleDateString() : 'N/A'}</TableCell>
+                  <TableCell>
+                    <Chip label={c.status || 'Pending'} color={getStatusColor(c.status)} size="small" />
+                  </TableCell>
+                  <TableCell>
+                    <IconButton onClick={() => handleViewCase(c)} sx={{ color: '#4a90e2' }}>
+                      <VisibilityIcon />
+                    </IconButton>
+                    <IconButton onClick={() => handleOpenForward(c)} sx={{ color: '#8e44ad' }}
+                      disabled={forwarding || c.status === 'FORWARDED_TO_JUDGE'}>
+                      <SendIcon />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
+              )) : (
+                <TableRow><TableCell colSpan={6} align="center">No pending cases found</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -244,72 +157,94 @@ const CaseManagement = ({ userId }) => {
         <DialogTitle>
           <Box display="flex" justifyContent="space-between" alignItems="center">
             Case Details
-            <IconButton onClick={() => setOpenDialog(false)}>
-              <CloseIcon />
-            </IconButton>
+            <IconButton onClick={() => setOpenDialog(false)}><CloseIcon /></IconButton>
           </Box>
         </DialogTitle>
         <DialogContent dividers>
           {selectedCase && (
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                {selectedCase.case_subject}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Case ID:</strong> {selectedCase._id}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Type:</strong> {selectedCase.case_type}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Description:</strong> {selectedCase.case_description || 'N/A'}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Assigned Registrar:</strong> {selectedCase.assigned_registrar || 'N/A'}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Assigned Judge:</strong> {selectedCase.judge_registrar || 'Not assigned'}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Filed Date:</strong> {new Date(selectedCase.filed_date).toLocaleDateString()}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Status:</strong> {selectedCase.status || 'Pending'}
-              </Typography>
-            </Box>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body1"><strong>Case ID:</strong> {selectedCase.id}</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body1"><strong>Case Number:</strong> {selectedCase.caseNumber || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="body1"><strong>Title:</strong> {selectedCase.title}</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body1"><strong>Type:</strong> {selectedCase.type || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body1"><strong>Status:</strong> <Chip label={selectedCase.status} color={getStatusColor(selectedCase.status)} size="small" /></Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="body1"><strong>Description:</strong> {selectedCase.description || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body1"><strong>Client:</strong> {selectedCase.clientName || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body1"><strong>Filed:</strong> {selectedCase.filedDate ? new Date(selectedCase.filedDate).toLocaleDateString() : 'N/A'}</Typography>
+              </Grid>
+              {selectedCase.documents?.length > 0 && (
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ mt: 2 }}>Documents ({selectedCase.documents.length})</Typography>
+                  {selectedCase.documents.map((doc, i) => (
+                    <Card key={i} sx={{ mt: 1 }}><CardContent>
+                      <Typography variant="body2"><strong>{doc.name}</strong> - {doc.type} {doc.validated ? '(Validated)' : '(Pending)'}</Typography>
+                    </CardContent></Card>
+                  ))}
+                </Grid>
+              )}
+              {selectedCase.history?.length > 0 && (
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ mt: 2 }}>History</Typography>
+                  {selectedCase.history.map((h, i) => (
+                    <Card key={i} sx={{ mt: 1 }}><CardContent>
+                      <Typography variant="body2"><strong>{h.status}</strong> - {h.organization} ({new Date(h.timestamp).toLocaleString()})</Typography>
+                      {h.comments && <Typography variant="caption">{h.comments}</Typography>}
+                    </CardContent></Card>
+                  ))}
+                </Grid>
+              )}
+            </Grid>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Close</Button>
-          {selectedCase && !selectedCase.judge_registrar && (
-            <Button
-              variant="contained"
-              startIcon={forwarding ? <CircularProgress size={20} /> : <SendIcon />}
-              onClick={() => handleForwardToJudge(selectedCase._id)}
-              sx={{
-                background: 'linear-gradient(45deg, #4a90e2 30%, #8e44ad 90%)',
-                color: 'white',
-              }}
-              disabled={forwarding}
-            >
+          {selectedCase && selectedCase.status !== 'FORWARDED_TO_JUDGE' && (
+            <Button variant="contained" startIcon={<SendIcon />} onClick={() => { setOpenDialog(false); handleOpenForward(selectedCase); }}
+              sx={{ background: 'linear-gradient(45deg, #4a90e2 30%, #8e44ad 90%)', color: 'white' }}>
               Forward to Judge
             </Button>
           )}
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar for notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <Alert
-          onClose={handleCloseSnackbar}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
+      {/* Forward to Judge Dialog */}
+      <Dialog open={openForwardDialog} onClose={() => setOpenForwardDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Forward Case to Judge</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Case: <strong>{selectedCase?.title || selectedCase?.id}</strong>
+          </Typography>
+          <TextField fullWidth label="Judge ID" value={judgeId} onChange={(e) => setJudgeId(e.target.value)}
+            placeholder="Enter judge ID (e.g., JUDGE_001)" sx={{ mt: 1 }} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenForwardDialog(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleForwardToJudge} disabled={forwarding}
+            startIcon={forwarding ? <CircularProgress size={20} /> : <GavelIcon />}
+            sx={{ background: 'linear-gradient(45deg, #4a90e2 30%, #8e44ad 90%)', color: 'white' }}>
+            {forwarding ? 'Forwarding...' : 'Forward to Judge'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
           {snackbar.message}
         </Alert>
       </Snackbar>

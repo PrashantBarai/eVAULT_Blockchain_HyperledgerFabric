@@ -1,143 +1,267 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Chip,
-  TextField,
-  InputAdornment,
-  Button,
-  ToggleButtonGroup,
-  ToggleButton,
+  Grid,
+  Card,
+  CardContent,
   CircularProgress,
+  ToggleButton,
+  ToggleButtonGroup,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
 } from '@mui/material';
 import {
-  Search as SearchIcon,
-  CalendarToday as CalendarTodayIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
-  InboxOutlined as InboxIcon,
+  Pending as PendingIcon,
+  TrendingUp as TrendingUpIcon,
+  CalendarMonth as CalendarMonthIcon,
+  DateRange as DateRangeIcon,
+  PauseCircle as PauseCircleIcon,
 } from '@mui/icons-material';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import axios from 'axios';
 import { getUserData } from '../../utils/auth';
 
 const CaseHistory = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [cases, setCases] = useState([]);
+  const [allCases, setAllCases] = useState([]);
+  const [stats, setStats] = useState({
+    totalApproved: 0,
+    totalRejected: 0,
+    totalOnHold: 0,
+  });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
-  // Date filter states
-  const [dateFilter, setDateFilter] = useState('all'); // 'all', '6months', '6years', 'year'
+  const [viewMode, setViewMode] = useState('last6months');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const user = getUserData();
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const currentYear = new Date().getFullYear();
+
+  const availableYears = useMemo(() => {
+    const years = [];
+    for (let i = 0; i < 10; i++) {
+      years.push(currentYear - i);
+    }
+    return years;
+  }, [currentYear]);
 
   useEffect(() => {
-    const fetchVerifiedCases = async () => {
+    const fetchCaseStats = async () => {
       try {
-        const user = getUserData();
-        if (!user?._id) throw new Error('User data not found.');
+        let approvedCases = [];
+        let rejectedCases = [];
+        let onHoldCases = [];
 
-        const verifiedCases = [];
+        if (user?._id) {
+          const casesResponse = await axios.get(`http://localhost:3000/stampreporter-cases/${user._id}`);
+          const assignedCaseIds = casesResponse.data.case_ids || [];
 
-        // Get case IDs assigned to this stamp reporter from MongoDB
-        const casesResponse = await axios.get(`http://localhost:3000/stampreporter-cases/${user._id}`);
-        const assignedCaseIds = casesResponse.data.case_ids || [];
+          for (const caseId of assignedCaseIds) {
+            try {
+              const caseResponse = await axios.get(`http://localhost:8000/api/stampreporter/case/${caseId}`);
+              if (caseResponse.data.success && caseResponse.data.data) {
+                const caseData = caseResponse.data.data;
+                const status = (caseData.status || '').toUpperCase();
+                const caseEntry = {
+                  id: caseId,
+                  createdAt: caseData.createdAt || caseData.filedDate || new Date().toISOString(),
+                  status: status,
+                };
 
-        // Fetch details for each assigned case from blockchain
-        for (const caseId of assignedCaseIds) {
-          try {
-            const caseResponse = await axios.get(`http://localhost:8000/api/stampreporter/case/${caseId}`);
-            if (caseResponse.data.success && caseResponse.data.data) {
-              const c = caseResponse.data.data;
-              const status = (c.status || '').toUpperCase();
-              
-              // Only show verified/approved/rejected cases in history
-              if (status.includes('VERIFIED') || status.includes('APPROVED') || status.includes('REJECTED') || status.includes('FORWARDED_TO')) {
-                verifiedCases.push({
-                  _id: caseId,
-                  case_subject: c.caseSubject || c.title || 'Untitled Case',
-                  associated_lawyers: c.associatedLawyers?.join(', ') || c.createdBy || 'N/A',
-                  filed_date: c.filedDate || c.createdAt,
-                  status: status.includes('REJECTED') ? 'Rejected' : 'Approved',
-                  reason: c.verificationNotes || c.rejectionReason || '-',
-                  verificationDate: c.updatedAt || c.filedDate || c.createdAt,
-                });
+                if (status.includes('REJECTED')) {
+                  rejectedCases.push(caseEntry);
+                } else if (status.includes('ON_HOLD') || status.includes('HOLD')) {
+                  onHoldCases.push(caseEntry);
+                } else if (status.includes('VERIFIED') || status.includes('APPROVED') || status.includes('VALIDATED') || status.includes('FORWARDED_TO')) {
+                  approvedCases.push(caseEntry);
+                }
+                // Pending cases are not included in history
               }
+            } catch (err) {
+              // Skip cases that don't exist in blockchain
             }
-          } catch (err) {
-            console.error(`Error fetching case ${caseId}:`, err);
           }
         }
 
-        setCases(verifiedCases);
-      } catch (err) {
-        setError(err.message);
+        setAllCases([...approvedCases, ...rejectedCases, ...onHoldCases]);
+        setStats({
+          totalApproved: approvedCases.length,
+          totalRejected: rejectedCases.length,
+          totalOnHold: onHoldCases.length,
+        });
+      } catch (error) {
+        console.error('Error fetching case stats:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchVerifiedCases();
+    fetchCaseStats();
   }, []);
 
-  // Get list of available years from cases
-  const availableYears = [...new Set(cases.map(c => {
-    const date = new Date(c.verificationDate || c.filed_date);
-    return date.getFullYear();
-  }))].sort((a, b) => b - a);
+  const chartData = useMemo(() => {
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth();
 
-  // Apply date filtering
-  const getDateFilteredCases = () => {
-    const now = new Date();
-    
-    return cases.filter(c => {
-      const caseDate = new Date(c.verificationDate || c.filed_date);
-      
-      if (dateFilter === '6months') {
-        const sixMonthsAgo = new Date(now);
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        return caseDate >= sixMonthsAgo;
-      } else if (dateFilter === '6years') {
-        const sixYearsAgo = new Date(now);
-        sixYearsAgo.setFullYear(sixYearsAgo.getFullYear() - 6);
-        return caseDate >= sixYearsAgo;
-      } else if (dateFilter === 'year') {
-        return caseDate.getFullYear() === selectedYear;
+    const categorize = (status) => {
+      const s = status.toUpperCase();
+      if (s.includes('REJECTED')) return 'rejected';
+      if (s.includes('ON_HOLD') || s.includes('HOLD')) return 'onHold';
+      return 'approved';
+    };
+
+    if (viewMode === 'last6months') {
+      const data = [];
+      for (let i = 5; i >= 0; i--) {
+        const targetDate = new Date(currentYear, currentMonth - i, 1);
+        const monthIndex = targetDate.getMonth();
+        const year = targetDate.getFullYear();
+        data.push({
+          label: `${months[monthIndex]}'${String(year).slice(-2)}`,
+          fullLabel: `${months[monthIndex]} ${year}`,
+          monthIndex,
+          year,
+          approved: 0,
+          rejected: 0,
+          onHold: 0,
+        });
       }
-      return true; // 'all'
-    });
-  };
 
-  const filteredCases = getDateFilteredCases().filter(
-    (case_) =>
-      (filterStatus === 'all' || case_.status.toLowerCase() === filterStatus) &&
-      (case_._id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       case_.case_subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       case_.associated_lawyers.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+      allCases.forEach(c => {
+        const date = new Date(c.createdAt);
+        const caseMonth = date.getMonth();
+        const caseYear = date.getFullYear();
+        const category = categorize(c.status);
 
-  const handleStatusChange = (event, newStatus) => {
-    if (newStatus !== null) {
-      setFilterStatus(newStatus);
+        const matchingEntry = data.find(d => d.monthIndex === caseMonth && d.year === caseYear);
+        if (matchingEntry) {
+          matchingEntry[category]++;
+        }
+      });
+
+      return data;
+    } else if (viewMode === 'last6years') {
+      const data = [];
+      for (let i = 5; i >= 0; i--) {
+        const year = currentYear - i;
+        data.push({
+          label: String(year),
+          fullLabel: String(year),
+          year,
+          approved: 0,
+          rejected: 0,
+          onHold: 0,
+        });
+      }
+
+      allCases.forEach(c => {
+        const date = new Date(c.createdAt);
+        const caseYear = date.getFullYear();
+        const category = categorize(c.status);
+
+        const matchingEntry = data.find(d => d.year === caseYear);
+        if (matchingEntry) {
+          matchingEntry[category]++;
+        }
+      });
+
+      return data;
+    } else {
+      const data = months.map((month, index) => ({
+        label: month,
+        fullLabel: `${month} ${selectedYear}`,
+        monthIndex: index,
+        year: selectedYear,
+        approved: 0,
+        rejected: 0,
+        onHold: 0,
+      }));
+
+      allCases.forEach(c => {
+        const date = new Date(c.createdAt);
+        const caseMonth = date.getMonth();
+        const caseYear = date.getFullYear();
+        const category = categorize(c.status);
+
+        if (caseYear === selectedYear) {
+          data[caseMonth][category]++;
+        }
+      });
+
+      return data;
+    }
+  }, [allCases, viewMode, selectedYear, currentYear]);
+
+  const handleViewModeChange = (event, newMode) => {
+    if (newMode !== null) {
+      setViewMode(newMode);
     }
   };
 
+  const getChartTitle = () => {
+    switch (viewMode) {
+      case 'last6months':
+        return 'Monthly Statistics (Last 6 Months)';
+      case 'last6years':
+        return 'Yearly Statistics (Last 6 Years)';
+      case 'specificYear':
+        return `Monthly Statistics for ${selectedYear}`;
+      default:
+        return 'Statistics';
+    }
+  };
+
+  const StatCard = ({ title, value, icon, color }) => (
+    <Card sx={{
+      height: '100%',
+      background: `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)`,
+      color: 'white',
+      transition: 'transform 0.2s',
+      '&:hover': {
+        transform: 'translateY(-5px)'
+      }
+    }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          {icon}
+          <Typography variant="h6" sx={{ ml: 1 }}>
+            {title}
+          </Typography>
+        </Box>
+        <Typography variant="h3" sx={{ textAlign: 'center', mt: 2 }}>
+          {value}
+        </Typography>
+      </CardContent>
+    </Card>
+  );
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ p: 3 }}>
-      <Paper 
+      <Paper
         elevation={0}
-        sx={{ 
+        sx={{
           p: 3,
           mb: 3,
           background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
@@ -145,226 +269,128 @@ const CaseHistory = () => {
           borderRadius: 2
         }}
       >
-        <Typography variant="h4" gutterBottom>Case History</Typography>
+        <Typography variant="h4">Case History</Typography>
         <Typography variant="subtitle1">
-          View all previously verified cases
+          Statistical overview of document verifications
         </Typography>
       </Paper>
 
-      <Box sx={{ 
-        display: 'flex', 
-        gap: 2, 
-        mb: 3,
-        flexDirection: { xs: 'column', md: 'row' }
-      }}>
-        <TextField
-          fullWidth
-          placeholder="Search by Case ID, Title, or Lawyer"
-          variant="outlined"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          InputProps={{
-            startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>,
-          }}
-        />
-        <Box sx={{ 
-          display: 'flex', 
-          gap: 2,
-          flexShrink: 0,
-          width: { xs: '100%', md: 'auto' }
-        }}>
-          <ToggleButtonGroup
-            value={filterStatus}
-            exclusive
-            onChange={handleStatusChange}
-            aria-label="case status filter"
-            sx={{ height: '56px' }}
-          >
-            <ToggleButton 
-              value="all"
-              sx={{ 
-                px: 3,
-                '&.Mui-selected': {
-                  bgcolor: '#3f51b5 !important',
-                  color: 'white !important',
-                }
-              }}
-            >
-              All
-            </ToggleButton>
-            <ToggleButton 
-              value="approved"
-              sx={{ 
-                px: 3,
-                '&.Mui-selected': {
-                  bgcolor: '#4caf50 !important',
-                  color: 'white !important',
-                }
-              }}
-            >
-              <CheckCircleIcon sx={{ mr: 1 }} />
-              Approved
-            </ToggleButton>
-            <ToggleButton 
-              value="rejected"
-              sx={{ 
-                px: 3,
-                '&.Mui-selected': {
-                  bgcolor: '#f44336 !important',
-                  color: 'white !important',
-                }
-              }}
-            >
-              <CancelIcon sx={{ mr: 1 }} />
-              Rejected
-            </ToggleButton>
-          </ToggleButtonGroup>
-          <Button 
-            variant={dateFilter === '6months' ? 'contained' : 'outlined'}
-            startIcon={<CalendarTodayIcon />}
-            onClick={() => setDateFilter(dateFilter === '6months' ? 'all' : '6months')}
-            sx={{ 
-              color: dateFilter === '6months' ? 'white' : '#3f51b5',
-              bgcolor: dateFilter === '6months' ? '#3f51b5' : 'transparent',
-              borderColor: '#3f51b5',
-              minWidth: '150px',
-              '&:hover': {
-                bgcolor: dateFilter === '6months' ? '#2f3f8f' : 'rgba(63, 81, 181, 0.1)',
-              }
-            }}
-          >
-            Last 6 Months
-          </Button>
-          <Button 
-            variant={dateFilter === '6years' ? 'contained' : 'outlined'}
-            startIcon={<CalendarTodayIcon />}
-            onClick={() => setDateFilter(dateFilter === '6years' ? 'all' : '6years')}
-            sx={{ 
-              color: dateFilter === '6years' ? 'white' : '#3f51b5',
-              bgcolor: dateFilter === '6years' ? '#3f51b5' : 'transparent',
-              borderColor: '#3f51b5',
-              minWidth: '150px',
-              '&:hover': {
-                bgcolor: dateFilter === '6years' ? '#2f3f8f' : 'rgba(63, 81, 181, 0.1)',
-              }
-            }}
-          >
-            Last 6 Years
-          </Button>
-          <FormControl sx={{ minWidth: 120 }}>
-            <InputLabel>Year</InputLabel>
-            <Select
-              value={dateFilter === 'year' ? selectedYear : ''}
-              label="Year"
-              onChange={(e) => {
-                setSelectedYear(e.target.value);
-                setDateFilter('year');
-              }}
-              size="medium"
-            >
-              {availableYears.length > 0 ? (
-                availableYears.map(year => (
-                  <MenuItem key={year} value={year}>{year}</MenuItem>
-                ))
-              ) : (
-                [new Date().getFullYear(), new Date().getFullYear() - 1, new Date().getFullYear() - 2].map(year => (
-                  <MenuItem key={year} value={year}>{year}</MenuItem>
-                ))
-              )}
-            </Select>
-          </FormControl>
-          {dateFilter !== 'all' && (
-            <Button 
-              variant="text"
-              onClick={() => setDateFilter('all')}
-              sx={{ color: '#f44336' }}
-            >
-              Clear Filter
-            </Button>
-          )}
-        </Box>
-      </Box>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Validated"
+            value={stats.totalApproved}
+            icon={<CheckCircleIcon sx={{ fontSize: 30 }} />}
+            color="#4caf50"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Rejected"
+            value={stats.totalRejected}
+            icon={<CancelIcon sx={{ fontSize: 30 }} />}
+            color="#f44336"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="On Hold"
+            value={stats.totalOnHold}
+            icon={<PauseCircleIcon sx={{ fontSize: 30 }} />}
+            color="#ff9800"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Total Processed"
+            value={stats.totalApproved + stats.totalRejected + stats.totalOnHold}
+            icon={<TrendingUpIcon sx={{ fontSize: 30 }} />}
+            color="#3f51b5"
+          />
+        </Grid>
+      </Grid>
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
-          <CircularProgress />
-        </Box>
-      ) : error ? (
-        <Typography variant="body2" color="error" align="center">{error}</Typography>
-      ) : filteredCases.length === 0 ? (
-        <Paper sx={{ p: 5, textAlign: 'center' }}>
-          <InboxIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-          <Typography variant="h6" color="text.secondary" gutterBottom>
-            No Case History Found
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {cases.length === 0 
-              ? "You haven't verified any cases yet."
-              : "No cases match your current filters."}
-          </Typography>
-        </Paper>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow sx={{ bgcolor: '#f5f5f5' }}>
-                <TableCell><Typography variant="subtitle2">Case ID</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Title</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Lawyer</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Verification Date</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Status</Typography></TableCell>
-                <TableCell><Typography variant="subtitle2">Reason</Typography></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredCases.map((case_) => (
-                <TableRow 
-                  key={case_._id}
-                  sx={{ 
-                    '&:hover': { 
-                      bgcolor: 'rgba(0, 0, 0, 0.04)',
-                      cursor: 'pointer'
-                    }
-                  }}
+      <Paper sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3 }}>
+          <Typography variant="h6">{getChartTitle()}</Typography>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={handleViewModeChange}
+              size="small"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  px: 2,
+                }
+              }}
+            >
+              <ToggleButton value="last6months">
+                <CalendarMonthIcon sx={{ mr: 1, fontSize: 18 }} />
+                Last 6 Months
+              </ToggleButton>
+              <ToggleButton value="last6years">
+                <DateRangeIcon sx={{ mr: 1, fontSize: 18 }} />
+                Last 6 Years
+              </ToggleButton>
+              <ToggleButton value="specificYear">
+                <DateRangeIcon sx={{ mr: 1, fontSize: 18 }} />
+                By Year
+              </ToggleButton>
+            </ToggleButtonGroup>
+
+            {viewMode === 'specificYear' && (
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <InputLabel>Year</InputLabel>
+                <Select
+                  value={selectedYear}
+                  label="Year"
+                  onChange={(e) => setSelectedYear(e.target.value)}
                 >
-                  <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {case_._id}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{case_.case_subject}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{case_.associated_lawyers}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">
-                      {case_.verificationDate ? new Date(case_.verificationDate).toLocaleDateString() : case_.filed_date}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={case_.status} 
-                      size="small"
-                      sx={{ 
-                        bgcolor: case_.status === 'Approved' ? '#4caf50' : '#f44336',
-                        color: 'white',
-                        fontWeight: 500
-                      }} 
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">
-                      {case_.reason}
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+                  {availableYears.map(year => (
+                    <MenuItem key={year} value={year}>{year}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </Box>
+        </Box>
+
+        <Box sx={{ height: 400, mt: 3 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={chartData}
+              margin={{
+                top: 20,
+                right: 30,
+                left: 20,
+                bottom: 5,
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" />
+              <YAxis
+                allowDecimals={false}
+                tickFormatter={(value) => Math.floor(value)}
+                domain={[0, 'auto']}
+              />
+              <Tooltip
+                formatter={(value, name) => [Math.floor(value), name]}
+                labelFormatter={(label) => {
+                  const entry = chartData.find(d => d.label === label);
+                  return entry?.fullLabel || label;
+                }}
+              />
+              <Legend />
+              <Bar dataKey="approved" name="Validated Cases" fill="#4caf50" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="rejected" name="Rejected Cases" fill="#f44336" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="onHold" name="On Hold Cases" fill="#ff9800" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Box>
+      </Paper>
     </Box>
   );
 };

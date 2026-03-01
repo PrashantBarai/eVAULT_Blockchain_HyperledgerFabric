@@ -1,4 +1,4 @@
-package benchclerk
+package main
 
 import (
 	"encoding/json"

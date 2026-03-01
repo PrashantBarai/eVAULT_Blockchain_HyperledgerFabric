@@ -77,9 +77,26 @@ const CaseDetails = () => {
         throw new Error('Authentication required');
       }
   
-      // Step 1: FIRST assign case to a registrar in MongoDB (queue-based allocation)
-      // This checks if registrars exist before proceeding with blockchain
-      let assignedRegistrarName = '';
+      // Step 1: FIRST commit to blockchain (source of truth)
+      // Blockchain must succeed before any MongoDB writes
+      const blockchainResponse = await axios.post(
+        'http://localhost:8000/api/lawyer/case/submit',
+        { caseID: id },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+  
+      if (!blockchainResponse.data.success) {
+        throw new Error(blockchainResponse.data.message || 'Failed to submit case on blockchain');
+      }
+      
+      console.log('Blockchain submit successful:', blockchainResponse.data);
+
+      // Step 2: ONLY after blockchain success, assign case to registrar in MongoDB
+      let assignedRegistrarName = 'Registrar';
       try {
         const assignResponse = await axios.post(
           'http://localhost:3000/assign-case-to-registrar',
@@ -95,42 +112,23 @@ const CaseDetails = () => {
           }
         );
         
-        if (!assignResponse.data.success) {
-          throw new Error(assignResponse.data.message || 'Failed to assign case to registrar');
+        if (assignResponse.data.success) {
+          assignedRegistrarName = assignResponse.data.assigned_registrar_name || 'Registrar';
+          console.log('Case assigned to registrar in MongoDB:', assignResponse.data);
         }
-        
-        assignedRegistrarName = assignResponse.data.assigned_registrar_name || 'Registrar';
-        console.log('Case assigned to registrar:', assignResponse.data);
       } catch (assignErr) {
-        const errorMsg = assignErr.response?.data?.detail || assignErr.message;
-        if (errorMsg.includes('No registrars') || assignErr.response?.status === 404) {
-          throw new Error('No Registrar users are registered in the system. Please ensure at least one Registrar account exists before submitting cases.');
-        }
-        throw new Error(`Failed to assign case: ${errorMsg}`);
+        // MongoDB assignment failed but blockchain already committed - log but don't fail
+        console.warn('MongoDB registrar assignment failed (non-critical):', assignErr.message);
+        // Blockchain is source of truth - case IS submitted regardless of MongoDB
       }
-      
-      // Step 2: Update blockchain via Fabric API
-      const blockchainResponse = await axios.post(
-        'http://localhost:8000/api/lawyer/case/submit',
-        { caseID: id },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-  
-      if (blockchainResponse.data.success) {
-        alert(`Case successfully assigned to ${assignedRegistrarName} and sent to registrar queue.`);
-        // Update the case data to reflect the new status
-        setCaseData(prev => ({ 
-          ...prev, 
-          status: 'PENDING_REGISTRAR_REVIEW',
-          currentOrg: 'RegistrarsOrg'
-        }));
-      } else {
-        throw new Error(blockchainResponse.data.message || 'Failed to update blockchain');
-      }
+
+      alert(`Case successfully submitted to ${assignedRegistrarName} for registrar review.`);
+      // Update the case data to reflect the new status
+      setCaseData(prev => ({ 
+        ...prev, 
+        status: 'PENDING_REGISTRAR_REVIEW',
+        currentOrg: 'RegistrarsOrg'
+      }));
     } catch (err) {
       console.error('Error sending case to registrar:', err);
       alert(err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to send case to registrar. Please try again.');

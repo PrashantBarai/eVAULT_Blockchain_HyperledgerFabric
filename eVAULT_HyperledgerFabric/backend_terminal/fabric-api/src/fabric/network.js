@@ -66,10 +66,33 @@ async function connectToNetwork(org, user, channelName, chaincodeName, autoEnrol
             },
             eventHandlerOptions: {
                 strategy: null // Use default strategy
-            }
+            },
         };
         
         // Connect to gateway and get network
+        // Increase peer gRPC connection timeout in the connection profile before connecting
+        if (connectionProfile.peers) {
+            for (const peerName of Object.keys(connectionProfile.peers)) {
+                const peer = connectionProfile.peers[peerName];
+                if (!peer.grpcOptions) peer.grpcOptions = {};
+                peer.grpcOptions['grpc.keepalive_time_ms'] = 120000;
+                peer.grpcOptions['grpc.keepalive_timeout_ms'] = 20000;
+                peer.grpcOptions['grpc.http2.min_time_between_pings_ms'] = 120000;
+                peer.grpcOptions['grpc.keepalive_permit_without_calls'] = 1;
+                peer.grpcOptions['grpc.max_send_message_length'] = 15 * 1024 * 1024;
+                peer.grpcOptions['grpc.max_receive_message_length'] = 15 * 1024 * 1024;
+                peer.grpcOptions['request-timeout'] = 30000;
+            }
+        }
+        if (connectionProfile.orderers) {
+            for (const ordererName of Object.keys(connectionProfile.orderers)) {
+                const orderer = connectionProfile.orderers[ordererName];
+                if (!orderer.grpcOptions) orderer.grpcOptions = {};
+                orderer.grpcOptions['grpc.keepalive_time_ms'] = 120000;
+                orderer.grpcOptions['grpc.keepalive_timeout_ms'] = 20000;
+            }
+        }
+        
         await gateway.connect(connectionProfile, connectionOptions);
         const network = await gateway.getNetwork(channelName);
         

@@ -430,7 +430,16 @@ async def assign_case_to_registrar(request: Request):
         })
         
         if existing_assignment:
-            raise HTTPException(status_code=400, detail="Case already assigned to a registrar")
+            # Return success with existing assignment instead of blocking retries
+            return {
+                "success": True,
+                "message": "Case already assigned to a registrar",
+                "case_id": blockchain_case_id,
+                "assigned_registrar_id": existing_assignment.get("assigned_registrar", ""),
+                "assigned_registrar_name": existing_assignment.get("registrar_name", "Registrar"),
+                "assigned_registrar_email": existing_assignment.get("registrar_email", ""),
+                "already_assigned": True
+            }
         
         # Get all registrars - use case-insensitive regex for user_type
         registrars = list(users_collection.find({
@@ -556,7 +565,15 @@ async def assign_case_to_stampreporter(request: Request):
         })
         
         if existing_assignment:
-            raise HTTPException(status_code=400, detail="Case already assigned to a stamp reporter")
+            # Return success with existing assignment instead of blocking retries
+            return {
+                "success": True,
+                "message": "Case already assigned to a stamp reporter",
+                "case_id": blockchain_case_id,
+                "assigned_stampreporter_name": existing_assignment.get("stampreporter_name", "Stamp Reporter"),
+                "assigned_stampreporter_email": existing_assignment.get("stampreporter_email", ""),
+                "already_assigned": True
+            }
         
         # Get all stamp reporters - use case-insensitive regex for user_type
         stampreporters = list(users_collection.find({
@@ -828,7 +845,15 @@ async def assign_case_to_benchclerk(request: Request):
         })
         
         if existing_assignment:
-            raise HTTPException(status_code=400, detail="Case already assigned to a bench clerk")
+            # Return success with existing assignment instead of blocking retries
+            return {
+                "success": True,
+                "message": "Case already assigned to a bench clerk",
+                "case_id": blockchain_case_id,
+                "assigned_benchclerk_name": existing_assignment.get("benchclerk_name", "Bench Clerk"),
+                "assigned_benchclerk_email": existing_assignment.get("benchclerk_email", ""),
+                "already_assigned": True
+            }
         
         # Get all bench clerks - use case-insensitive regex for user_type
         benchclerks = list(users_collection.find({

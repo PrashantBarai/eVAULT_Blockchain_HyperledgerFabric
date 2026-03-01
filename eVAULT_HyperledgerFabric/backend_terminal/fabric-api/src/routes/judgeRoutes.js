@@ -4,58 +4,50 @@ const judgeController = require('../controllers/judgeController');
 const router = express.Router();
 
 /**
- * @route   POST /api/judge/judgment/record
- * @desc    Record judgment for a case
- * @access  Public
+ * @route   GET /api/judge/cases/pending
+ * @desc    Get pending cases from benchclerk namespace
  */
-router.post('/judgment/record', judgeController.recordJudgment);
+router.get('/cases/pending', judgeController.getPendingCases);
 
 /**
- * @route   POST /api/judge/hearing/add-notes
- * @desc    Add hearing notes to case
- * @access  Public
+ * @route   POST /api/judge/case/accept
+ * @desc    Fetch and accept case (copy from benchclerk to judge namespace)
  */
-router.post('/hearing/add-notes', judgeController.addHearingNotes);
+router.post('/case/accept', judgeController.fetchAndAcceptCase);
 
 /**
- * @route   POST /api/judge/case/store
- * @desc    Store a case
- * @access  Public
+ * @route   GET /api/judge/cases/active
+ * @desc    Get active cases from judge namespace
  */
-router.post('/case/store', judgeController.storeCase);
+router.get('/cases/active', judgeController.getActiveCases);
 
 /**
  * @route   GET /api/judge/case/:caseID
- * @desc    Get case by ID
- * @access  Public
+ * @desc    Get case by ID from judge namespace
  */
 router.get('/case/:caseID', judgeController.getCaseById);
 
 /**
- * @route   POST /api/judge/case/forward-to-benchclerk
- * @desc    Forward case to bench clerk
- * @access  Public
+ * @route   POST /api/judge/hearing/add-notes
+ * @desc    Add hearing notes to case
  */
-router.post('/case/forward-to-benchclerk', judgeController.forwardCaseToBenchClerk);
+router.post('/hearing/add-notes', judgeController.addHearingNotes);
 
 /**
- * @route   POST /api/judge/case/fetch-from-benchclerk
- * @desc    Fetch and store case from bench clerk channel
- * @access  Public
+ * @route   POST /api/judge/judgment/record-and-sync
+ * @desc    Record judgment and sync to bench clerk + lawyer (namespace-aware)
  */
-router.post('/case/fetch-from-benchclerk', judgeController.fetchFromBenchClerkChannel);
+router.post('/judgment/record-and-sync', judgeController.recordJudgmentAndSync);
 
 /**
  * @route   GET /api/judge/cases/judged
  * @desc    Get judged cases
- * @access  Public
  */
 router.get('/cases/judged', judgeController.getJudgedCases);
 
 /**
  * @route   GET /api/judge/stats
  * @desc    Get case statistics
- * @access  Public
  */
 router.get('/stats', judgeController.queryStats);
 

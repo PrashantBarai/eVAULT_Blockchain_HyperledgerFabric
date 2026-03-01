@@ -91,39 +91,12 @@ const CaseVerification = () => {
     try {
       const user = getUserData();
       
-      // Step 1: FIRST check if stamp reporters exist and assign in MongoDB
-      // This prevents blockchain operations if no stamp reporter is available
-      try {
-        const assignResponse = await axios.post(
-          'http://localhost:3000/assign-case-to-stampreporter',
-          {
-            caseID: id,
-            caseSubject: caseDetails.case_subject,
-            registrarEmail: user?.email || '',
-            department: selectedDepartment
-          }
-        );
-
-        if (assignResponse.data.success) {
-          assignedStampReporterName = assignResponse.data.assigned_stampreporter_name || 'Stamp Reporter';
-          messages.push(`✓ Case assigned to: ${assignedStampReporterName} (${assignResponse.data.assigned_stampreporter_email || ''})`);
-          console.log('Case assigned to stamp reporter:', assignResponse.data);
-        } else {
-          throw new Error(assignResponse.data.message || 'Failed to assign case');
-        }
-      } catch (assignErr) {
-        console.error('MongoDB assignment failed:', assignErr.message);
-        // If no stamp reporter exists, show error and stop
-        const errorMsg = assignErr.response?.data?.detail || assignErr.message;
-        if (errorMsg.includes('No stamp reporters') || assignErr.response?.status === 404) {
-          throw new Error('No Stamp Reporter users are registered in the system. Please ensure at least one Stamp Reporter account exists before forwarding cases.');
-        }
-        throw new Error(`Failed to assign case: ${errorMsg}`);
-      }
-
-      // Step 2: Call verify-and-forward which does BOTH blockchain operations sequentially:
+      // Step 1: BLOCKCHAIN FIRST (source of truth)
+      // Call verify-and-forward which does ALL blockchain operations sequentially:
       // 1. VerifyCase on lawyer-registrar-channel (marks as VERIFIED_BY_REGISTRAR)
-      // 2. FetchAndStoreCaseFromLawyerChannel on registrar-stampreporter-channel (cross-channel transfer)
+      // 2. StoreCase on registrar-stampreporter-channel (cross-channel transfer)
+      // 3. Update lawyer namespace on lawyer-registrar-channel (so lawyer dashboard sees update)
+      // 4. MongoDB update (handled by backend after blockchain success)
       try {
         const forwardResponse = await axios.post(
           'http://localhost:8000/api/registrar/case/verify-and-forward',
@@ -152,6 +125,27 @@ const CaseVerification = () => {
         throw new Error(`Failed to forward case on blockchain: ${forwardErr.response?.data?.message || forwardErr.message}`);
       }
 
+      // Step 2: ONLY after blockchain success - assign case to stamp reporter in MongoDB
+      try {
+        const assignResponse = await axios.post(
+          'http://localhost:3000/assign-case-to-stampreporter',
+          {
+            caseID: id,
+            caseSubject: caseDetails.case_subject,
+            registrarEmail: user?.email || '',
+            department: selectedDepartment
+          }
+        );
+
+        if (assignResponse.data.success) {
+          assignedStampReporterName = assignResponse.data.assigned_stampreporter_name || 'Stamp Reporter';
+          messages.push(`✓ Case assigned to: ${assignedStampReporterName}`);
+        }
+      } catch (assignErr) {
+        console.warn('MongoDB stamp reporter assignment failed (non-critical):', assignErr.message);
+        // Blockchain is source of truth - case IS forwarded regardless of MongoDB
+      }
+
       // Step 3: Notify the lawyer about case status update
       try {
         const notifyResponse = await axios.post(
@@ -161,7 +155,7 @@ const CaseVerification = () => {
             caseSubject: caseDetails.case_subject,
             lawyerEmail: caseDetails.associated_lawyers,
             status: 'FORWARDED_TO_STAMP_REPORTER',
-            message: `Your case has been verified by Registrar and forwarded to ${assignedStampReporterName} (${selectedDepartment} department) for stamp verification.`,
+            message: `Your case has been verified by Registrar and forwarded to ${assignedStampReporterName || 'Stamp Reporter'} (${selectedDepartment} department) for stamp verification.`,
             updatedBy: user?.username || 'Registrar'
           }
         );
@@ -171,33 +165,10 @@ const CaseVerification = () => {
         }
       } catch (notifyErr) {
         console.warn('Lawyer notification failed:', notifyErr.message);
-        // Don't fail the whole operation for notification failure
       }
 
-      // Step 4: Update case status and timeline in MongoDB
-      try {
-        await axios.post('http://localhost:3000/update-case-status', {
-          caseID: id,
-          status: 'FORWARDED_TO_STAMP_REPORTER',
-          timeline: [
-            {
-              status: 'VERIFIED_BY_REGISTRAR',
-              timestamp: new Date().toISOString(),
-              updatedBy: user?.username || 'Registrar',
-              comment: `Case verified and assigned to ${selectedDepartment} department`
-            },
-            {
-              status: 'FORWARDED_TO_STAMP_REPORTER',
-              timestamp: new Date().toISOString(),
-              updatedBy: user?.username || 'Registrar',
-              comment: `Case forwarded to ${assignedStampReporterName} for stamp verification`
-            }
-          ]
-        });
-        messages.push('✓ Case timeline updated');
-      } catch (updateErr) {
-        console.warn('Case status update failed:', updateErr.message);
-      }
+      // NOTE: MongoDB timeline update is handled by the backend registrarController
+      // after blockchain success. No duplicate write here.
 
       setOpenApproveDialog(false);
       setSuccessMessage(messages.join('\n'));
