@@ -232,9 +232,14 @@ const judgeController = {
             await conn1.contract.submitTransaction('RecordJudgment', caseID, JSON.stringify(judgmentDetails));
             logger.info(`[Step 1/4] ✓ Judgment recorded`);
 
-            // STEP 2: Read updated case
-            const caseResult = await conn1.contract.evaluateTransaction('GetCaseById', caseID);
-            const caseData = JSON.parse(caseResult.toString());
+            // STEP 2: Read updated case (wait for peer to commit)
+            let caseData;
+            for (let i = 0; i < 5; i++) {
+                const caseResult = await conn1.contract.evaluateTransaction('GetCaseById', caseID);
+                caseData = JSON.parse(caseResult.toString());
+                if (caseData.status === 'JUDGMENT_ISSUED') break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
             logger.info(`[Step 2/4] ✓ Updated case read from judge namespace`);
             await disconnectFromNetwork(gateway1);
             gateway1 = null;

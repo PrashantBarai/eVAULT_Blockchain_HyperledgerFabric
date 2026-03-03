@@ -9,6 +9,7 @@ import {
   Search as SearchIcon, Close as CloseIcon, Gavel as GavelIcon,
   CheckCircle as CheckCircleIcon, Visibility as VisibilityIcon,
 } from '@mui/icons-material';
+import { formatDate } from '../../utils/dateFormat';
 
 const FABRIC_API = 'http://localhost:8000/api/judge';
 
@@ -127,7 +128,7 @@ const CaseReview = () => {
                   <TableCell>
                     <Chip label={c.status || 'Pending'} color={getStatusColor(c.status)} size="small" />
                   </TableCell>
-                  <TableCell>{c.filedDate ? new Date(c.filedDate).toLocaleDateString() : 'N/A'}</TableCell>
+                  <TableCell>{c.filedDate ? formatDate(c.filedDate) : 'N/A'}</TableCell>
                   <TableCell>
                     <IconButton onClick={() => handleViewCase(c)} sx={{ color: '#1a237e' }}>
                       <VisibilityIcon />
@@ -188,7 +189,7 @@ const CaseReview = () => {
                       </Grid>
                       <Grid item xs={12} sm={6}>
                         <Typography variant="body2" color="text.secondary">
-                          Filed: {selectedCase.filedDate ? new Date(selectedCase.filedDate).toLocaleDateString() : 'N/A'}
+                          Filed: {selectedCase.filedDate ? formatDate(selectedCase.filedDate) : 'N/A'}
                         </Typography>
                       </Grid>
                       <Grid item xs={12} sm={6}>
@@ -211,10 +212,19 @@ const CaseReview = () => {
                     <Typography variant="h6" gutterBottom>Documents ({selectedCase.documents.length})</Typography>
                     {selectedCase.documents.map((doc, i) => (
                       <Card key={i} sx={{ mt: 1 }}>
-                        <CardContent>
-                          <Typography variant="body2">
-                            <strong>{doc.name}</strong> — {doc.type} {doc.validated ? '(Validated)' : '(Pending)'}
-                          </Typography>
+                        <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Box>
+                            <Typography variant="body2">
+                              <strong>{doc.name}</strong> — {doc.type} {doc.validated ? '(Validated)' : '(Pending)'}
+                            </Typography>
+                          </Box>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => window.open(`https://lime-occasional-xerinae-665.mypinata.cloud/ipfs/${doc.hash || doc.id}`, '_blank')}
+                          >
+                            View
+                          </Button>
                         </CardContent>
                       </Card>
                     ))}
@@ -229,7 +239,7 @@ const CaseReview = () => {
                       <Card key={i} sx={{ mt: 1 }}>
                         <CardContent>
                           <Typography variant="body2">
-                            <strong>{h.status}</strong> — {h.organization} ({new Date(h.timestamp).toLocaleString()})
+                            <strong>{h.status}</strong> — {h.organization} ({formatDate(h.timestamp)})
                           </Typography>
                           {h.comments && <Typography variant="caption">{h.comments}</Typography>}
                         </CardContent>

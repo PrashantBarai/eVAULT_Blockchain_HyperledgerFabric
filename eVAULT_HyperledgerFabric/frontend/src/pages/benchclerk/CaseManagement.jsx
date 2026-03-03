@@ -3,18 +3,21 @@ import {
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, TextField, InputAdornment, Dialog,
   DialogTitle, DialogContent, DialogActions, IconButton, CircularProgress,
-  Snackbar, Alert, Chip, Grid, Card, CardContent,
+  Snackbar, Alert, Chip, Grid, Card, CardContent, FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import {
   Search as SearchIcon, Send as SendIcon, Visibility as VisibilityIcon,
   Close as CloseIcon, Gavel as GavelIcon,
 } from '@mui/icons-material';
 import { getUserData } from '../../utils/auth';
+import { formatDate, DATE_FORMAT_LABEL } from '../../utils/dateFormat';
 
 const FABRIC_API = 'http://localhost:8000/api/benchclerk';
+const JUDGES_API = 'http://localhost:3000/judges';
 
 const CaseManagement = () => {
   const [cases, setCases] = useState([]);
+  const [filteredCases, setFilteredCases] = useState([]); // Added for filtering
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCase, setSelectedCase] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -22,24 +25,53 @@ const CaseManagement = () => {
   const [judgeId, setJudgeId] = useState('');
   const [loading, setLoading] = useState(true);
   const [forwarding, setForwarding] = useState(false);
-  const [error, setError] = useState('');
+  const [judges, setJudges] = useState([]);
+  const [error, setError] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
-  const fetchCases = async () => {
+  const fetchCasesAndJudges = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${FABRIC_API}/cases/pending`);
-      if (!response.ok) throw new Error('Failed to fetch cases');
-      const data = await response.json();
-      setCases(data.data || []);
+      setError(null); // Clear previous errors
+
+      // Fetch cases
+      const casesRes = await fetch(`${FABRIC_API}/cases/pending`);
+      if (!casesRes.ok) {
+        const errData = await casesRes.json();
+        throw new Error(errData.message || 'Failed to fetch cases');
+      }
+      const casesData = await casesRes.json();
+      setCases(casesData.data || []);
+      setFilteredCases(casesData.data || []); // Initialize filtered cases
+
+      // Fetch judges
+      const judgesRes = await fetch(JUDGES_API);
+      if (!judgesRes.ok) {
+        const errData = await judgesRes.json();
+        throw new Error(errData.message || 'Failed to fetch judges');
+      }
+      const judgesData = await judgesRes.json();
+      setJudges(judgesData.judges || []);
+
     } catch (err) {
       setError(err.message);
+      setSnackbar({ open: true, message: err.message, severity: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchCases(); }, []);
+  useEffect(() => { fetchCasesAndJudges(); }, []);
+
+  // Update filtered cases when searchQuery or cases change
+  useEffect(() => {
+    const q = searchQuery.toLowerCase();
+    const newFilteredCases = cases.filter((c) => {
+      return (c.id?.toLowerCase().includes(q) || c.title?.toLowerCase().includes(q) ||
+        c.type?.toLowerCase().includes(q) || c.caseNumber?.toLowerCase().includes(q));
+    });
+    setFilteredCases(newFilteredCases);
+  }, [searchQuery, cases]);
 
   const handleViewCase = (caseData) => {
     setSelectedCase(caseData);
@@ -54,6 +86,10 @@ const CaseManagement = () => {
 
   const handleForwardToJudge = async () => {
     if (!selectedCase?.id) return;
+    if (!judgeId) {
+      setSnackbar({ open: true, message: 'Please select a judge before forwarding', severity: 'error' });
+      return;
+    }
     try {
       setForwarding(true);
       const user = getUserData();
@@ -63,7 +99,7 @@ const CaseManagement = () => {
         body: JSON.stringify({
           caseID: selectedCase.id,
           assignmentDetails: {
-            judgeId: judgeId || 'JUDGE_DEFAULT',
+            judgeId: judgeId,
             assignedBy: user?.username || 'benchclerk',
             assignedAt: new Date().toISOString(),
           },
@@ -76,7 +112,7 @@ const CaseManagement = () => {
       setSnackbar({ open: true, message: `Case ${selectedCase.id} forwarded to judge`, severity: 'success' });
       setOpenForwardDialog(false);
       setOpenDialog(false);
-      fetchCases();
+      fetchCasesAndJudges();
     } catch (err) {
       setSnackbar({ open: true, message: err.message, severity: 'error' });
     } finally {
@@ -91,12 +127,6 @@ const CaseManagement = () => {
     };
     return map[status] || 'default';
   };
-
-  const filteredCases = cases.filter((c) => {
-    const q = searchQuery.toLowerCase();
-    return (c.id?.toLowerCase().includes(q) || c.title?.toLowerCase().includes(q) ||
-      c.type?.toLowerCase().includes(q) || c.caseNumber?.toLowerCase().includes(q));
-  });
 
   return (
     <Box sx={{ p: 3 }}>
@@ -130,7 +160,7 @@ const CaseManagement = () => {
                   <TableCell>{c.caseNumber || c.id}</TableCell>
                   <TableCell>{c.title || c.caseSubject}</TableCell>
                   <TableCell>{c.type || 'N/A'}</TableCell>
-                  <TableCell>{c.filedDate ? new Date(c.filedDate).toLocaleDateString() : 'N/A'}</TableCell>
+                  <TableCell>{c.filedDate ? formatDate(c.filedDate) : 'N/A'}</TableCell>
                   <TableCell>
                     <Chip label={c.status || 'Pending'} color={getStatusColor(c.status)} size="small" />
                   </TableCell>
@@ -185,7 +215,7 @@ const CaseManagement = () => {
                 <Typography variant="body1"><strong>Client:</strong> {selectedCase.clientName || 'N/A'}</Typography>
               </Grid>
               <Grid item xs={12} sm={6}>
-                <Typography variant="body1"><strong>Filed:</strong> {selectedCase.filedDate ? new Date(selectedCase.filedDate).toLocaleDateString() : 'N/A'}</Typography>
+                <Typography variant="body1"><strong>Filed:</strong> {selectedCase.filedDate ? formatDate(selectedCase.filedDate) : 'N/A'}</Typography>
               </Grid>
               {selectedCase.documents?.length > 0 && (
                 <Grid item xs={12}>
@@ -202,7 +232,7 @@ const CaseManagement = () => {
                   <Typography variant="h6" sx={{ mt: 2 }}>History</Typography>
                   {selectedCase.history.map((h, i) => (
                     <Card key={i} sx={{ mt: 1 }}><CardContent>
-                      <Typography variant="body2"><strong>{h.status}</strong> - {h.organization} ({new Date(h.timestamp).toLocaleString()})</Typography>
+                      <Typography variant="body2"><strong>{h.status}</strong> - {h.organization} ({formatDate(h.timestamp)})</Typography>
                       {h.comments && <Typography variant="caption">{h.comments}</Typography>}
                     </CardContent></Card>
                   ))}
@@ -229,8 +259,21 @@ const CaseManagement = () => {
           <Typography variant="body2" sx={{ mb: 2 }}>
             Case: <strong>{selectedCase?.title || selectedCase?.id}</strong>
           </Typography>
-          <TextField fullWidth label="Judge ID" value={judgeId} onChange={(e) => setJudgeId(e.target.value)}
-            placeholder="Enter judge ID (e.g., JUDGE_001)" sx={{ mt: 1 }} />
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel id="judge-select-label">Select Judge</InputLabel>
+            <Select
+              labelId="judge-select-label"
+              value={judgeId}
+              label="Select Judge"
+              onChange={(e) => setJudgeId(e.target.value)}
+            >
+              {judges.map(j => (
+                <MenuItem key={j._id} value={j.judgeId || j._id}>
+                  {j.username || j.email} {j.judgeId ? `(${j.judgeId})` : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenForwardDialog(false)}>Cancel</Button>

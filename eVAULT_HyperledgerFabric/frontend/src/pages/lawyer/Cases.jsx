@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { getUserData } from '../../utils/auth';
+import { formatDate, DATE_FORMAT_LABEL } from '../../utils/dateFormat';
 
 const Cases = () => {
   const navigate = useNavigate();
@@ -39,14 +40,14 @@ const Cases = () => {
           throw new Error('You must be logged in to view cases.');
         }
         console.log('User data:', user);
-        
+
         // Approach 1: Try to get cases linked to this user from MongoDB
         let userCaseIds = [];
         try {
           const mongoResponse = await fetch(`http://localhost:3000/user-cases/${user.email}`, {
             method: 'GET'
           });
-          
+
           if (mongoResponse.ok) {
             const mongoData = await mongoResponse.json();
             console.log('MongoDB case references:', mongoData);
@@ -55,7 +56,7 @@ const Cases = () => {
         } catch (mongoError) {
           console.warn('Could not fetch case references from MongoDB:', mongoError);
         }
-        
+
         // Approach 2: Fetch all cases from blockchain
         const response = await fetch(`http://localhost:8000/api/lawyer/cases/all`, {
           method: 'GET',
@@ -67,9 +68,9 @@ const Cases = () => {
 
         const data = await response.json();
         console.log('Blockchain cases:', data);
-        
+
         let allCases = data.data || [];
-        
+
         // If we have case IDs from MongoDB, show only those cases
         // Otherwise, show all cases (fallback for cases created before linking feature)
         if (userCaseIds.length > 0) {
@@ -78,12 +79,12 @@ const Cases = () => {
         } else {
           // Fallback: filter by createdBy field
           const username = user.username || user.name;
-          allCases = allCases.filter(c => 
+          allCases = allCases.filter(c =>
             c.createdBy === username || c.createdBy === user.email
           );
           console.log('Filtered by createdBy:', allCases);
         }
-        
+
         setCases(allCases);
       } catch (err) {
         setError(err.message);
@@ -98,12 +99,12 @@ const Cases = () => {
   // Filter cases based on search query only
   const filteredCases = cases.filter((case_) => {
     // Search filter
-    const matchesSearch = 
+    const matchesSearch =
       (case_.caseSubject || case_.case_subject)?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (case_.id || case_._id)?.toString().toLowerCase().includes(searchQuery.toLowerCase()) ||
       (case_.clientName || case_.client)?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (case_.caseNumber || case_.case_number)?.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     return matchesSearch;
   });
 
@@ -146,7 +147,7 @@ const Cases = () => {
           My Cases
           <Chip label={filteredCases.length} color="primary" size="small" />
         </Typography>
-        
+
         <TextField
           fullWidth
           variant="outlined"
@@ -172,7 +173,7 @@ const Cases = () => {
               <TableCell><strong>Title</strong></TableCell>
               <TableCell><strong>Client</strong></TableCell>
               <TableCell><strong>Current Stage</strong></TableCell>
-              <TableCell><strong>Date Filed</strong></TableCell>
+              <TableCell><strong>Date Filed {DATE_FORMAT_LABEL}</strong></TableCell>
               <TableCell><strong>Actions</strong></TableCell>
             </TableRow>
           </TableHead>
@@ -181,8 +182,8 @@ const Cases = () => {
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   <Typography variant="body2" color="text.secondary" sx={{ py: 3 }}>
-                    {searchQuery 
-                      ? 'No cases found matching your search' 
+                    {searchQuery
+                      ? 'No cases found matching your search'
                       : 'No cases available'}
                   </Typography>
                 </TableCell>
@@ -196,13 +197,13 @@ const Cases = () => {
                     <TableCell>{case_.caseSubject || case_.case_subject || case_.title}</TableCell>
                     <TableCell>{case_.clientName || case_.client}</TableCell>
                     <TableCell>
-                      <Chip 
-                        label={stageInfo.label} 
+                      <Chip
+                        label={stageInfo.label}
                         color={stageInfo.color}
                         size="small"
                       />
                     </TableCell>
-                    <TableCell>{new Date(case_.filedDate || case_.filed_date).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(case_.filedDate || case_.filed_date)}</TableCell>
                     <TableCell>
                       <Button
                         variant="contained"

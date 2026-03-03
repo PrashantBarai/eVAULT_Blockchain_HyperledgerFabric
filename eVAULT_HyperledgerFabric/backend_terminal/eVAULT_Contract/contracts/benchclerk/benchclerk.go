@@ -33,6 +33,17 @@ type Case struct {
 	CreatedAt         string        `json:"createdAt"`
 	LastModified      string        `json:"lastModified"`
 	Decision          string        `json:"decision"`
+	Judgment          *Judgment     `json:"judgment,omitempty" metadata:",optional"`
+}
+
+// Judgment represents a judge's final decision on a case
+type Judgment struct {
+	Decision  string `json:"decision"`
+	Reasoning string `json:"reasoning"`
+	Date      string `json:"date"`
+	JudgeID   string `json:"judgeId"`
+	IssuedAt  string `json:"issuedAt"`
+	Status    string `json:"status"`
 }
 
 // Judge represents a judicial officer in the system

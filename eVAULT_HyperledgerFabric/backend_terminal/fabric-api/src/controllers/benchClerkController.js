@@ -161,8 +161,15 @@ const benchClerkController = {
             await conn1.contract.submitTransaction('ForwardToJudge', caseID, JSON.stringify(assignmentDetails));
             logger.info(`[Step 1/3] ✓ Case assigned to judge`);
 
-            const caseResult = await conn1.contract.evaluateTransaction('GetCaseById', caseID);
-            const caseData = JSON.parse(caseResult.toString());
+            // Wait until the peer commits the transaction before fetching for cross-channel sync
+            let caseData;
+            for (let i = 0; i < 5; i++) {
+                const caseResult = await conn1.contract.evaluateTransaction('GetCaseById', caseID);
+                caseData = JSON.parse(caseResult.toString());
+                if (caseData.status === 'PENDING_JUDGE_REVIEW') break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
             await disconnectFromNetwork(gateway1);
             gateway1 = null;
 
@@ -342,8 +349,13 @@ const benchClerkController = {
             await conn1.contract.submitTransaction('ConfirmJudgeDecision', caseID);
             logger.info(`[Step 1/2] ✓ Decision confirmed`);
 
-            const caseResult = await conn1.contract.evaluateTransaction('GetCaseById', caseID);
-            const caseData = JSON.parse(caseResult.toString());
+            let caseData;
+            for (let i = 0; i < 5; i++) {
+                const caseResult = await conn1.contract.evaluateTransaction('GetCaseById', caseID);
+                caseData = JSON.parse(caseResult.toString());
+                if (caseData.status === 'DECISION_CONFIRMED') break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
             await disconnectFromNetwork(gateway1);
             gateway1 = null;
 

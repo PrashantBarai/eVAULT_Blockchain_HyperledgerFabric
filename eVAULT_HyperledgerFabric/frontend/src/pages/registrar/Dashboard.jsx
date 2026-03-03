@@ -50,27 +50,27 @@ const Dashboard = () => {
   const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const user = getUserData();
-  
+
   useEffect(() => {
     const fetchRegistrarData = async () => {
       try {
         let pendingCount = 0;
         let verifiedCount = 0;
-        
+
         console.log('Fetching registrar data for user:', user);
-        
+
         // First, get the case IDs assigned to this registrar from MongoDB
         if (user?._id) {
           console.log('Fetching cases for registrar ID:', user._id);
           const registrarCasesResponse = await fetch(`http://localhost:3000/registrar-cases/${user._id}`);
           console.log('Registrar cases response status:', registrarCasesResponse.status);
-          
+
           if (registrarCasesResponse.ok) {
             const registrarCasesData = await registrarCasesResponse.json();
             console.log('Registrar cases data:', registrarCasesData);
             const assignedCaseIds = registrarCasesData.case_ids || [];
             console.log('Assigned case IDs:', assignedCaseIds);
-            
+
             // Only count cases that exist in blockchain (skip stale MongoDB references)
             for (const caseId of assignedCaseIds) {
               try {
@@ -83,9 +83,11 @@ const Dashboard = () => {
                     const status = (caseData.data.status || '').toUpperCase();
                     console.log(`Case ${caseId} status: ${status}`);
                     // Count as verified if forwarded to stamp reporter or later stages
-                    if (status.includes('FORWARDED') || status.includes('VERIFIED') || 
-                        status.includes('APPROVED') || status.includes('ASSIGNED_TO_STAMP') ||
-                        status.includes('COMPLETED') || status.includes('STAMPREPORTER')) {
+                    if (status.includes('FORWARDED') || status.includes('VERIFIED') ||
+                      status.includes('VALIDATED') || status.includes('TRANSFERRED') ||
+                      status.includes('APPROVED') || status.includes('ASSIGNED_TO_STAMP') ||
+                      status.includes('COMPLETED') || status.includes('STAMPREPORTER') ||
+                      status.includes('BENCHCLERK') || status.includes('JUDGE')) {
                       verifiedCount++;
                     } else {
                       // Count any other status as pending
@@ -101,7 +103,7 @@ const Dashboard = () => {
             }
           }
         }
-        
+
         setRegistrar({ name: user?.username || 'Registrar' });
         setStats([
           {

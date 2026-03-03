@@ -13,10 +13,12 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  CircularProgress,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteIcon from '@mui/icons-material/Delete';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -82,6 +84,17 @@ const CaseSubmission = () => {
     description: '',
   });
   const [files, setFiles] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Determine if required fields are filled
+  const isFormValid =
+    formData.uidParty1.trim() !== '' &&
+    formData.uidParty2.trim() !== '' &&
+    formData.caseSubject.trim() !== '' &&
+    formData.client.trim() !== '' &&
+    formData.caseType.trim() !== '' &&
+    formData.description.trim() !== '' &&
+    files.length > 0;
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -113,6 +126,13 @@ const CaseSubmission = () => {
       alert('Please login to submit a case');
       return;
     }
+
+    if (!isFormValid) {
+      alert('Please fill out all required fields.');
+      return;
+    }
+
+    setIsSubmitting(true);
     console.log(user);
 
     // Upload files to IPFS and get CIDs
@@ -122,13 +142,13 @@ const CaseSubmission = () => {
         for (const file of files) {
           const formDataForIPFS = new FormData();
           formDataForIPFS.append('file', file);
-          
+
           // Upload to IPFS via FastAPI backend (secure - API keys hidden)
           const ipfsResponse = await fetch('http://localhost:3000/upload-to-ipfs', {
             method: 'POST',
             body: formDataForIPFS,
           });
-          
+
           if (ipfsResponse.ok) {
             const ipfsResult = await ipfsResponse.json();
             documents.push({
@@ -169,7 +189,7 @@ const CaseSubmission = () => {
       description: formData.description,
       documents: documents
     };
-    
+
     console.log('Sending JSON data:', jsonData);
 
     try {
@@ -186,7 +206,7 @@ const CaseSubmission = () => {
       }
       const result = await response.json();
       console.log('Blockchain response:', result);
-      
+
       // Link the case to user in MongoDB
       if (result.case_id) {
         try {
@@ -196,12 +216,12 @@ const CaseSubmission = () => {
           linkData.append('username', user.username || user.name);
           linkData.append('license_id', user.licenseId || user.license_id || '');
           linkData.append('email', user.email);
-          
+
           const linkResponse = await fetch('http://localhost:3000/link-case', {
             method: 'POST',
             body: linkData
           });
-          
+
           if (linkResponse.ok) {
             const linkResult = await linkResponse.json();
             console.log('Case linked to user in MongoDB:', linkResult);
@@ -212,9 +232,9 @@ const CaseSubmission = () => {
           console.error('Error linking case:', linkError);
         }
       }
-      
+
       alert('Case created successfully!');
-      
+
       // Reset form after successful submission
       setFormData({
         uidParty1: '',
@@ -228,7 +248,7 @@ const CaseSubmission = () => {
         description: '',
       });
       setFiles([]);
-      
+
       // Log pending cases info for debugging
       if (result.user?.pending_cases) {
         console.log('Updated pending cases:', result.user.pending_cases);
@@ -236,6 +256,8 @@ const CaseSubmission = () => {
     } catch (error) {
       console.error('Error creating case:', error);
       alert('Failed to create case. Please try again.');
+    } finally {
+      setIsSubmitting(false); // Re-enable button on error or success
     }
   };
 
@@ -355,7 +377,7 @@ const CaseSubmission = () => {
 
             <Grid item xs={12}>
               <Typography variant="h6" gutterBottom sx={{ color: '#2C3E50', mt: 2 }}>
-                Uploaded Evidences (Optional)
+                Uploaded Evidences (Required)
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 (in format of .jpg, .jpeg, .png, .pdf, .mp4, .mkv, .doc, .txt)
@@ -373,7 +395,7 @@ const CaseSubmission = () => {
                 <UploadArea>
                   <CloudUploadIcon sx={{ fontSize: 48, color: '#6B5ECD', mb: 2 }} />
                   <Typography variant="h6" gutterBottom sx={{ color: '#2C3E50' }}>
-                    Drop files here or click to upload (Optional)
+                    Drop files here or click to upload (Required)
                   </Typography>
                 </UploadArea>
               </label>
@@ -388,8 +410,17 @@ const CaseSubmission = () => {
                   </Typography>
                   <IconButton
                     size="small"
+                    onClick={() => window.open(URL.createObjectURL(file), '_blank')}
+                    sx={{ color: '#4a90e2', mr: 1 }}
+                    title="View File"
+                  >
+                    <VisibilityIcon />
+                  </IconButton>
+                  <IconButton
+                    size="small"
                     onClick={() => handleRemoveFile(index)}
                     sx={{ color: '#FF6B6B' }}
+                    title="Remove File"
                   >
                     <DeleteIcon />
                   </IconButton>
@@ -413,13 +444,14 @@ const CaseSubmission = () => {
                 <Button
                   type="submit"
                   variant="contained"
+                  disabled={!isFormValid || isSubmitting}
                   sx={{
-                    background: 'linear-gradient(135deg, #6B5ECD 0%, #8B7CF7 100%)',
+                    background: (!isFormValid || isSubmitting) ? '#ccc' : 'linear-gradient(135deg, #6B5ECD 0%, #8B7CF7 100%)',
                     borderRadius: '8px',
                     px: 4,
                   }}
                 >
-                  Create Case
+                  {isSubmitting ? <><CircularProgress size={20} sx={{ color: 'white', mr: 1 }} /> Creating...</> : 'Create Case'}
                 </Button>
               </Box>
             </Grid>

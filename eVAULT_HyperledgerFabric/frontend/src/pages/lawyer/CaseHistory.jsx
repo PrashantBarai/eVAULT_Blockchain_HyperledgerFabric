@@ -19,6 +19,7 @@ import {
 } from '@mui/material';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { getUserData } from '../../utils/auth';
+import { formatDate, DATE_FORMAT_LABEL } from '../../utils/dateFormat';
 
 const CaseHistory = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -152,7 +153,7 @@ const CaseHistory = () => {
               <TableCell>Title</TableCell>
               <TableCell>Client</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Date</TableCell>
+              <TableCell>Date {DATE_FORMAT_LABEL}</TableCell>
               <TableCell>Verified By</TableCell>
             </TableRow>
           </TableHead>
@@ -169,7 +170,7 @@ const CaseHistory = () => {
                     size="small"
                   />
                 </TableCell>
-                <TableCell>{new Date(case_.filed_date).toLocaleDateString()}</TableCell>
+                <TableCell>{formatDate(case_.filed_date)}</TableCell>
                 <TableCell>{case_.verifiedBy}</TableCell>
               </TableRow>
             ))}

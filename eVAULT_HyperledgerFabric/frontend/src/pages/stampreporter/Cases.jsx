@@ -22,6 +22,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { getUserData } from '../../utils/auth';
 import axios from 'axios';
+import { formatDate } from '../../utils/dateFormat';
 
 const Cases = () => {
   const navigate = useNavigate();
@@ -58,9 +59,16 @@ const Cases = () => {
             if (caseResponse.data.success && caseResponse.data.data) {
               const caseData = caseResponse.data.data;
               const status = (caseData.status || '').toUpperCase();
-              
-              // Only show pending cases (not verified or rejected)
-              if (!status.includes('VERIFIED') && !status.includes('APPROVED') && !status.includes('REJECTED') && !status.includes('FORWARDED_TO')) {
+
+              // Only show pending cases (not verified, validated or rejected)
+              if (!status.includes('VERIFIED') &&
+                !status.includes('APPROVED') &&
+                !status.includes('REJECTED') &&
+                !status.includes('VALIDATED') &&
+                !status.includes('BENCHCLERK') &&
+                !status.includes('JUDGE') &&
+                status !== 'FORWARDED_TO_BENCHCLERK' &&
+                status !== 'FORWARDED_TO_STAMPREPORTER_COMPLETED') {
                 fetchedCases.push({
                   _id: caseId,
                   case_subject: caseData.caseSubject || caseData.title || 'Untitled',
@@ -208,7 +216,7 @@ const Cases = () => {
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">
-                      {case_.filed_date ? new Date(case_.filed_date).toLocaleDateString() : 'N/A'}
+                      {case_.filed_date ? formatDate(case_.filed_date) : 'N/A'}
                     </Typography>
                   </TableCell>
                   <TableCell>

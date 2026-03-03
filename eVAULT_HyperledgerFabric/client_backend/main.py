@@ -1680,3 +1680,25 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=3000)
 
 
+
+@app.get("/judges")
+async def get_all_judges():
+    try:
+        judges = list(users_collection.find({"user_type": "judge"}, {"_id": 1, "username": 1, "email": 1, "judgeId": 1}))
+        for judge in judges:
+            judge["_id"] = str(judge["_id"])
+        return {"success": True, "judges": judges}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
+
+@app.put('/notification/{uid}/mark-read')
+async def mark_notifications_read(uid: str):
+    try:
+        user_object_id = ObjectId(uid)
+        result = users_collection.update_one(
+            {"_id": user_object_id},
+            {"$set": {"notifications.$[].read": True}}
+        )
+        return {"success": True, "message": "Notifications marked as read"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error updating notifications: {str(e)}")

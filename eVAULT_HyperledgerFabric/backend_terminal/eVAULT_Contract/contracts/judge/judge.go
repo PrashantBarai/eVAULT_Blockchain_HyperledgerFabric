@@ -31,8 +31,8 @@ type Case struct {
 	CreatedBy         string        `json:"createdBy"`
 	CreatedAt         string        `json:"createdAt"`
 	LastModified      string        `json:"lastModified"`
-	Hearings          []Hearing     `json:"hearings"`
-	Judgment          *Judgment     `json:"judgment,omitempty"`
+	Hearings          []Hearing     `json:"hearings" metadata:",optional"`
+	Judgment          *Judgment     `json:"judgment,omitempty" metadata:",optional"`
 }
 
 // Document represents a case document

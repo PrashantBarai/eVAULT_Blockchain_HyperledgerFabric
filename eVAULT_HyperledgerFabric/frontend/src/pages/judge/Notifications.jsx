@@ -12,6 +12,7 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Button,
 } from '@mui/material';
 import {
   Gavel as GavelIcon,
@@ -21,9 +22,12 @@ import {
   Update as UpdateIcon,
   Info as InfoIcon,
   InboxOutlined as InboxIcon,
+  DoneAll as DoneAllIcon,
 } from '@mui/icons-material';
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { getUserData } from '../../utils/auth';
+import { formatRelativeDate } from '../../utils/dateFormat';
 
 const FABRIC_API = 'http://localhost:8000/api/judge';
 
@@ -57,6 +61,7 @@ const Notifications = () => {
                 read: false,
                 caseId: c.caseNumber || c.id,
                 priority: 'high',
+                isActionable: true,
               });
             });
           }
@@ -80,6 +85,7 @@ const Notifications = () => {
                 read: true,
                 caseId: c.caseNumber || c.id,
                 priority: 'medium',
+                isActionable: true,
               });
             });
           }
@@ -123,6 +129,16 @@ const Notifications = () => {
     fetchNotifications();
   }, []);
 
+  const handleMarkAllAsRead = async () => {
+    try {
+      if (!user?._id) return;
+      await axios.put(`http://localhost:3000/notification/${user._id}/mark-read`);
+      setNotifications(prev => prev.map(n => n.isActionable ? n : { ...n, read: true }));
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
+  };
+
   const handleNotificationClick = (notification) => {
     switch (notification.type) {
       case 'new_case':
@@ -163,21 +179,6 @@ const Notifications = () => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 60) return `${diffMins} mins ago`;
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    if (diffDays < 7) return `${diffDays} days ago`;
-    return date.toLocaleDateString();
-  };
-
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
@@ -192,17 +193,29 @@ const Notifications = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">
-          Notifications
-        </Typography>
-        <Badge
-          badgeContent={notifications.filter(n => !n.read).length}
-          color="error"
-          sx={{ ml: 2 }}
-        >
-          <NotificationsActiveIcon color="action" />
-        </Badge>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Typography variant="h4">
+            Notifications
+          </Typography>
+          <Badge
+            badgeContent={notifications.filter(n => !n.read).length}
+            color="error"
+            sx={{ ml: 2 }}
+          >
+            <NotificationsActiveIcon color="action" />
+          </Badge>
+        </Box>
+        {notifications.some(n => !n.read && !n.isActionable) && (
+          <Button
+            variant="outlined"
+            startIcon={<DoneAllIcon />}
+            onClick={handleMarkAllAsRead}
+            sx={{ color: '#1a237e', borderColor: '#1a237e' }}
+          >
+            Mark Informational as Read
+          </Button>
+        )}
       </Box>
 
       {notifications.length === 0 ? (
@@ -246,7 +259,7 @@ const Notifications = () => {
                             position: 'absolute',
                             top: -4,
                             right: -4,
-                            color: '#e74c3c',
+                            color: notification.isActionable ? '#e74c3c' : '#1a237e',
                             fontSize: 12,
                           }}
                         />
@@ -272,7 +285,7 @@ const Notifications = () => {
                           {notification.message}
                         </Typography>
                         <Typography variant="caption" color="textSecondary">
-                          {formatDate(notification.timestamp)} • Case ID: {notification.caseId}
+                          {formatRelativeDate(notification.timestamp)} • Case ID: {notification.caseId}
                         </Typography>
                       </Box>
                     }

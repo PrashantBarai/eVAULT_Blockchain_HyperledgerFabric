@@ -17,7 +17,7 @@ const lawyerController = {
         // Debug logging
         console.log('Request body:', req.body);
         console.log('Content-Type:', req.headers['content-type']);
-        
+
         // Handle FormData from frontend - matching actual field names
         const {
             uid_party1,
@@ -45,7 +45,7 @@ const lawyerController = {
         const caseId = `CASE_${Date.now()}`;
         const caseNumber = `CN${Math.floor(Math.random() * 100000)}`;
         const currentTimestamp = new Date().toISOString();
-        
+
         // Create case data object matching chaincode structure exactly
         const caseData = {
             id: caseId,
@@ -76,16 +76,16 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             await contract.submitTransaction('CreateCase', JSON.stringify(caseData));
             logger.info(`Case created successfully with ID: ${caseData.id}`);
-            
+
             // Update user's cases array in MongoDB via client_backend
             if (user_id) {
                 try {
@@ -99,7 +99,7 @@ const lawyerController = {
                     // Continue anyway - blockchain is the source of truth
                 }
             }
-            
+
             return res.status(200).json({
                 success: true,
                 message: 'Case created successfully',
@@ -129,16 +129,16 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             await contract.submitTransaction('SubmitToRegistrar', caseID);
             logger.info(`Case ${caseID} submitted to registrar successfully`);
-            
+
             return res.status(200).json({
                 success: true,
                 message: `Case ${caseID} submitted to registrar successfully`,
@@ -173,7 +173,7 @@ const lawyerController = {
         let gateway1 = null;
         let gateway2 = null;
         let gateway3 = null;
-        
+
         try {
             const fabricConfig = config.fabric.lawyer;
             let primaryCaseData = null;
@@ -187,23 +187,23 @@ const lawyerController = {
             // ================================================================
             try {
                 const connection1 = await connectToNetwork(
-                    fabricConfig.org, 
-                    fabricConfig.user, 
-                    'lawyer-registrar-channel', 
+                    fabricConfig.org,
+                    fabricConfig.user,
+                    'lawyer-registrar-channel',
                     'lawyer'
                 );
                 gateway1 = connection1.gateway;
 
                 const result1 = await connection1.contract.evaluateTransaction('GetCase', caseID);
                 primaryCaseData = JSON.parse(result1.toString());
-                
+
                 if (primaryCaseData.history) {
                     allHistoryItems.push(...primaryCaseData.history);
                 }
                 latestStatus = primaryCaseData.status;
                 latestCurrentOrg = primaryCaseData.currentOrg;
                 latestModified = primaryCaseData.lastModified;
-                
+
                 logger.info(`[Channel 1] Retrieved case ${caseID} from lawyer-registrar-channel`);
             } catch (err) {
                 logger.warn(`[Channel 1] Could not fetch from lawyer-registrar-channel: ${err.message}`);
@@ -215,22 +215,23 @@ const lawyerController = {
             // ================================================================
             // Channel 2: stampreporter-lawyer-channel (stamp reporter updates)
             // ================================================================
+            let stampReporterData = null;
             try {
                 const connection2 = await connectToNetwork(
-                    fabricConfig.org, 
-                    fabricConfig.user, 
-                    'stampreporter-lawyer-channel', 
+                    fabricConfig.org,
+                    fabricConfig.user,
+                    'stampreporter-lawyer-channel',
                     'lawyer'
                 );
                 gateway2 = connection2.gateway;
 
                 const result2 = await connection2.contract.evaluateTransaction('GetCase', caseID);
-                const stampReporterData = JSON.parse(result2.toString());
-                
+                stampReporterData = JSON.parse(result2.toString());
+
                 if (stampReporterData.history) {
                     // Add history items that don't already exist
                     stampReporterData.history.forEach(item => {
-                        const exists = allHistoryItems.some(h => 
+                        const exists = allHistoryItems.some(h =>
                             h.status === item.status && h.timestamp === item.timestamp
                         );
                         if (!exists) {
@@ -238,15 +239,15 @@ const lawyerController = {
                         }
                     });
                 }
-                
+
                 // Update to latest status if this channel has newer data
-                if (stampReporterData.lastModified && 
+                if (stampReporterData.lastModified &&
                     (!latestModified || new Date(stampReporterData.lastModified) > new Date(latestModified))) {
                     latestStatus = stampReporterData.status;
                     latestCurrentOrg = stampReporterData.currentOrg;
                     latestModified = stampReporterData.lastModified;
                 }
-                
+
                 logger.info(`[Channel 2] Retrieved case ${caseID} from stampreporter-lawyer-channel`);
             } catch (err) {
                 logger.debug(`[Channel 2] Case not found on stampreporter-lawyer-channel: ${err.message}`);
@@ -258,22 +259,23 @@ const lawyerController = {
             // ================================================================
             // Channel 3: benchclerk-lawyer-channel (bench clerk updates)
             // ================================================================
+            let benchClerkData = null;
             try {
                 const connection3 = await connectToNetwork(
-                    fabricConfig.org, 
-                    fabricConfig.user, 
-                    'benchclerk-lawyer-channel', 
+                    fabricConfig.org,
+                    fabricConfig.user,
+                    'benchclerk-lawyer-channel',
                     'lawyer'
                 );
                 gateway3 = connection3.gateway;
 
                 const result3 = await connection3.contract.evaluateTransaction('GetCase', caseID);
-                const benchClerkData = JSON.parse(result3.toString());
-                
+                benchClerkData = JSON.parse(result3.toString());
+
                 if (benchClerkData.history) {
                     // Add history items that don't already exist
                     benchClerkData.history.forEach(item => {
-                        const exists = allHistoryItems.some(h => 
+                        const exists = allHistoryItems.some(h =>
                             h.status === item.status && h.timestamp === item.timestamp
                         );
                         if (!exists) {
@@ -281,15 +283,15 @@ const lawyerController = {
                         }
                     });
                 }
-                
+
                 // Update to latest status if this channel has newer data
-                if (benchClerkData.lastModified && 
+                if (benchClerkData.lastModified &&
                     (!latestModified || new Date(benchClerkData.lastModified) > new Date(latestModified))) {
                     latestStatus = benchClerkData.status;
                     latestCurrentOrg = benchClerkData.currentOrg;
                     latestModified = benchClerkData.lastModified;
                 }
-                
+
                 logger.info(`[Channel 3] Retrieved case ${caseID} from benchclerk-lawyer-channel`);
             } catch (err) {
                 logger.debug(`[Channel 3] Case not found on benchclerk-lawyer-channel: ${err.message}`);
@@ -324,8 +326,12 @@ const lawyerController = {
                 history: allHistoryItems
             };
 
+            // Inject judgment if discovered from later channels
+            if (stampReporterData?.judgment) aggregatedCaseData.judgment = stampReporterData.judgment;
+            if (benchClerkData?.judgment) aggregatedCaseData.judgment = benchClerkData.judgment;
+
             logger.info(`Retrieved and aggregated case ${caseID} from ${allHistoryItems.length} history items`);
-            
+
             return res.status(200).json({
                 success: true,
                 data: aggregatedCaseData
@@ -356,16 +362,16 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             await contract.submitTransaction('UpdateCaseDetails', caseID, JSON.stringify(updates));
             logger.info(`Case ${caseID} details updated successfully`);
-            
+
             return res.status(200).json({
                 success: true,
                 message: `Case ${caseID} details updated successfully`,
@@ -391,26 +397,27 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             const result = await contract.evaluateTransaction('GetCasesByFilter', filter);
-            const cases = JSON.parse(result.toString());
-            logger.info(`Retrieved ${cases.length} cases by filter`);
-            
+            const resultStr = result.toString();
+            const cases = resultStr ? JSON.parse(resultStr) : [];
+            logger.info(`Retrieved ${(cases || []).length} cases by filter`);
+
             return res.status(200).json({
                 success: true,
-                data: cases
+                data: cases || []
             });
         } catch (error) {
             logger.error(`Error getting cases by filter: ${error.message}`);
-            return res.status(500).json({
-                success: false,
-                message: `Failed to get cases by filter: ${error.message}`,
+            return res.status(200).json({
+                success: true,
+                data: []
             });
         } finally {
             await disconnectFromNetwork(gateway);
@@ -430,16 +437,16 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             await contract.submitTransaction('AddDocumentToCase', caseID, JSON.stringify(document));
             logger.info(`Document added to case ${caseID} successfully`);
-            
+
             return res.status(200).json({
                 success: true,
                 message: `Document added to case ${caseID} successfully`,
@@ -463,26 +470,27 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             const result = await contract.evaluateTransaction('GetConfirmedDecisions');
-            const cases = JSON.parse(result.toString());
-            logger.info(`Retrieved ${cases.length} confirmed decisions`);
-            
+            const resultStr = result.toString();
+            const cases = resultStr ? JSON.parse(resultStr) : [];
+            logger.info(`Retrieved ${(cases || []).length} confirmed decisions`);
+
             return res.status(200).json({
                 success: true,
-                data: cases
+                data: cases || []
             });
         } catch (error) {
             logger.error(`Error getting confirmed decisions: ${error.message}`);
-            return res.status(500).json({
-                success: false,
-                message: `Failed to get confirmed decisions: ${error.message}`,
+            return res.status(200).json({
+                success: true,
+                data: []
             });
         } finally {
             await disconnectFromNetwork(gateway);
@@ -502,26 +510,30 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             const result = await contract.evaluateTransaction('ViewJudgmentDetails', caseID);
-            const judgmentDetails = JSON.parse(result.toString());
+            const resultStr = result.toString();
+            if (!resultStr) {
+                return res.status(404).json({ success: false, message: `Judgment details not found for case: ${caseID}` });
+            }
+            const judgmentDetails = JSON.parse(resultStr);
             logger.info(`Retrieved judgment details for case ${caseID}`);
-            
+
             return res.status(200).json({
                 success: true,
                 data: judgmentDetails
             });
         } catch (error) {
             logger.error(`Error getting judgment details: ${error.message}`);
-            return res.status(500).json({
+            return res.status(404).json({
                 success: false,
-                message: `Failed to get judgment details: ${error.message}`,
+                message: `Judgment details not found: ${caseID}`,
             });
         } finally {
             await disconnectFromNetwork(gateway);
@@ -542,7 +554,7 @@ const lawyerController = {
         let gateway1 = null;
         let gateway2 = null;
         let gateway3 = null;
-        
+
         try {
             const fabricConfig = config.fabric.lawyer;
             const casesMap = new Map(); // caseID -> case data (keeps latest version)
@@ -552,9 +564,9 @@ const lawyerController = {
             // ================================================================
             try {
                 const connection1 = await connectToNetwork(
-                    fabricConfig.org, 
-                    fabricConfig.user, 
-                    'lawyer-registrar-channel', 
+                    fabricConfig.org,
+                    fabricConfig.user,
+                    'lawyer-registrar-channel',
                     'lawyer'
                 );
                 gateway1 = connection1.gateway;
@@ -582,9 +594,9 @@ const lawyerController = {
             // ================================================================
             try {
                 const connection2 = await connectToNetwork(
-                    fabricConfig.org, 
-                    fabricConfig.user, 
-                    'stampreporter-lawyer-channel', 
+                    fabricConfig.org,
+                    fabricConfig.user,
+                    'stampreporter-lawyer-channel',
                     'lawyer'
                 );
                 gateway2 = connection2.gateway;
@@ -598,13 +610,13 @@ const lawyerController = {
                             const caseId = c.id || c.ID;
                             const existing = casesMap.get(caseId);
                             // Keep the version with the most recent lastModified
-                            if (!existing || 
+                            if (!existing ||
                                 (c.lastModified && new Date(c.lastModified) > new Date(existing.lastModified || 0))) {
                                 // Merge history from both sources
                                 if (existing && existing.history) {
                                     const mergedHistory = [...(existing.history || [])];
                                     (c.history || []).forEach(item => {
-                                        const exists = mergedHistory.some(h => 
+                                        const exists = mergedHistory.some(h =>
                                             h.status === item.status && h.timestamp === item.timestamp
                                         );
                                         if (!exists) mergedHistory.push(item);
@@ -616,7 +628,7 @@ const lawyerController = {
                             } else if (existing && c.history) {
                                 // Even if not newer, merge history items
                                 c.history.forEach(item => {
-                                    const exists = existing.history.some(h => 
+                                    const exists = existing.history.some(h =>
                                         h.status === item.status && h.timestamp === item.timestamp
                                     );
                                     if (!exists) existing.history.push(item);
@@ -639,9 +651,9 @@ const lawyerController = {
             // ================================================================
             try {
                 const connection3 = await connectToNetwork(
-                    fabricConfig.org, 
-                    fabricConfig.user, 
-                    'benchclerk-lawyer-channel', 
+                    fabricConfig.org,
+                    fabricConfig.user,
+                    'benchclerk-lawyer-channel',
                     'lawyer'
                 );
                 gateway3 = connection3.gateway;
@@ -654,12 +666,12 @@ const lawyerController = {
                         cases.forEach(c => {
                             const caseId = c.id || c.ID;
                             const existing = casesMap.get(caseId);
-                            if (!existing || 
+                            if (!existing ||
                                 (c.lastModified && new Date(c.lastModified) > new Date(existing.lastModified || 0))) {
                                 if (existing && existing.history) {
                                     const mergedHistory = [...(existing.history || [])];
                                     (c.history || []).forEach(item => {
-                                        const exists = mergedHistory.some(h => 
+                                        const exists = mergedHistory.some(h =>
                                             h.status === item.status && h.timestamp === item.timestamp
                                         );
                                         if (!exists) mergedHistory.push(item);
@@ -670,7 +682,7 @@ const lawyerController = {
                                 casesMap.set(caseId, c);
                             } else if (existing && c.history) {
                                 c.history.forEach(item => {
-                                    const exists = existing.history.some(h => 
+                                    const exists = existing.history.some(h =>
                                         h.status === item.status && h.timestamp === item.timestamp
                                     );
                                     if (!exists) existing.history.push(item);
@@ -693,7 +705,7 @@ const lawyerController = {
             // ================================================================
             const cases = Array.from(casesMap.values());
             logger.info(`Retrieved ${cases.length} aggregated cases from all channels`);
-            
+
             return res.status(200).json({
                 success: true,
                 data: cases,
@@ -724,7 +736,7 @@ const lawyerController = {
         let gateway1 = null;
         let gateway2 = null;
         let gateway3 = null;
-        
+
         try {
             const fabricConfig = config.fabric.lawyer;
             const casesMap = new Map();
@@ -732,12 +744,13 @@ const lawyerController = {
             // Channel 1: lawyer-registrar-channel
             try {
                 const conn1 = await connectToNetwork(
-                    fabricConfig.org, fabricConfig.user, 
+                    fabricConfig.org, fabricConfig.user,
                     'lawyer-registrar-channel', 'lawyer'
                 );
                 gateway1 = conn1.gateway;
                 const result = await conn1.contract.evaluateTransaction('GetCasesByLawyerID', lawyerID);
-                const cases = JSON.parse(result.toString());
+                const resultStr = result.toString();
+                const cases = resultStr ? JSON.parse(resultStr) : [];
                 cases.forEach(c => casesMap.set(c.id || c.ID, c));
                 logger.info(`[getCasesByLawyerID Ch1] Found ${cases.length} cases`);
             } catch (err) {
@@ -750,16 +763,17 @@ const lawyerController = {
             // Channel 2: stampreporter-lawyer-channel
             try {
                 const conn2 = await connectToNetwork(
-                    fabricConfig.org, fabricConfig.user, 
+                    fabricConfig.org, fabricConfig.user,
                     'stampreporter-lawyer-channel', 'lawyer'
                 );
                 gateway2 = conn2.gateway;
                 const result = await conn2.contract.evaluateTransaction('GetCasesByLawyerID', lawyerID);
-                const cases = JSON.parse(result.toString());
+                const resultStr = result.toString();
+                const cases = resultStr ? JSON.parse(resultStr) : [];
                 cases.forEach(c => {
                     const caseId = c.id || c.ID;
                     const existing = casesMap.get(caseId);
-                    if (!existing || 
+                    if (!existing ||
                         (c.lastModified && new Date(c.lastModified) > new Date(existing.lastModified || 0))) {
                         if (existing && existing.history) {
                             const mergedHistory = [...(existing.history || [])];
@@ -785,16 +799,17 @@ const lawyerController = {
             // Channel 3: benchclerk-lawyer-channel
             try {
                 const conn3 = await connectToNetwork(
-                    fabricConfig.org, fabricConfig.user, 
+                    fabricConfig.org, fabricConfig.user,
                     'benchclerk-lawyer-channel', 'lawyer'
                 );
                 gateway3 = conn3.gateway;
                 const result = await conn3.contract.evaluateTransaction('GetCasesByLawyerID', lawyerID);
-                const cases = JSON.parse(result.toString());
+                const resultStr = result.toString();
+                const cases = resultStr ? JSON.parse(resultStr) : [];
                 cases.forEach(c => {
                     const caseId = c.id || c.ID;
                     const existing = casesMap.get(caseId);
-                    if (!existing || 
+                    if (!existing ||
                         (c.lastModified && new Date(c.lastModified) > new Date(existing.lastModified || 0))) {
                         if (existing && existing.history) {
                             const mergedHistory = [...(existing.history || [])];
@@ -819,7 +834,7 @@ const lawyerController = {
 
             const cases = Array.from(casesMap.values());
             logger.info(`Retrieved ${cases.length} aggregated cases for lawyer ${lawyerID}`);
-            
+
             return res.status(200).json({
                 success: true,
                 data: cases
@@ -850,26 +865,30 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             const result = await contract.evaluateTransaction('TrackCaseStatus', caseID);
-            const statusInfo = JSON.parse(result.toString());
+            const resultStr = result.toString();
+            if (!resultStr) {
+                return res.status(404).json({ success: false, message: `Case status not found: ${caseID}` });
+            }
+            const statusInfo = JSON.parse(resultStr);
             logger.info(`Retrieved status tracking info for case ${caseID}`);
-            
+
             return res.status(200).json({
                 success: true,
                 data: statusInfo
             });
         } catch (error) {
             logger.error(`Error tracking case status: ${error.message}`);
-            return res.status(500).json({
+            return res.status(404).json({
                 success: false,
-                message: `Failed to track case status: ${error.message}`,
+                message: `Case status not found: ${caseID}`,
             });
         } finally {
             await disconnectFromNetwork(gateway);
@@ -884,26 +903,27 @@ const lawyerController = {
         try {
             const fabricConfig = config.fabric.lawyer;
             const { contract, gateway: g } = await connectToNetwork(
-                fabricConfig.org, 
-                fabricConfig.user, 
-                fabricConfig.channelName, 
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
                 fabricConfig.chaincodeName
             );
             gateway = g;
 
             const result = await contract.evaluateTransaction('QueryStats');
-            const stats = JSON.parse(result.toString());
+            const resultStr = result.toString();
+            const stats = resultStr ? JSON.parse(resultStr) : { totalCases: 0, pendingCases: 0, filedCases: 0, forwardedCases: 0 };
             logger.info('Retrieved case statistics');
-            
+
             return res.status(200).json({
                 success: true,
                 data: stats
             });
         } catch (error) {
             logger.error(`Error getting case statistics: ${error.message}`);
-            return res.status(500).json({
-                success: false,
-                message: `Failed to get case statistics: ${error.message}`,
+            return res.status(200).json({
+                success: true,
+                data: { totalCases: 0, pendingCases: 0, filedCases: 0, forwardedCases: 0 }
             });
         } finally {
             await disconnectFromNetwork(gateway);

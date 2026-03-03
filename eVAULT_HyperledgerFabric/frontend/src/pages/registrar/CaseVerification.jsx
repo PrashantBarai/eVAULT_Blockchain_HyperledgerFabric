@@ -81,16 +81,19 @@ const CaseVerification = () => {
   }, [id]);
 
   const handleApprove = async () => {
-    if (!selectedDepartment) return;
-    
+    if (!selectedDepartment) {
+      setError('Please select a department before forwarding.');
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
     let messages = [];
     let assignedStampReporterName = '';
-    
+
     try {
       const user = getUserData();
-      
+
       // Step 1: BLOCKCHAIN FIRST (source of truth)
       // Call verify-and-forward which does ALL blockchain operations sequentially:
       // 1. VerifyCase on lawyer-registrar-channel (marks as VERIFIED_BY_REGISTRAR)
@@ -104,6 +107,7 @@ const CaseVerification = () => {
             caseID: id,
             department: selectedDepartment,
             verificationDetails: {
+              isVerified: true,
               verifiedBy: user?.username || 'Registrar',
               verifiedAt: new Date().toISOString(),
               department: selectedDepartment,
@@ -173,10 +177,10 @@ const CaseVerification = () => {
       setOpenApproveDialog(false);
       setSuccessMessage(messages.join('\n'));
       setShowSuccess(true);
-      
+
       // Show alert with assigned stamp reporter name (like lawyer does)
       alert(`Case successfully verified and assigned to ${assignedStampReporterName} for stamp verification.`);
-      
+
       setTimeout(() => {
         navigate('/registrar/dashboard');
       }, 3000);
@@ -275,8 +279,8 @@ const CaseVerification = () => {
 
           {/* Check if case is already forwarded/verified */}
           {caseDetails.status && (
-            caseDetails.status.includes('VERIFIED') || 
-            caseDetails.status.includes('FORWARDED') || 
+            caseDetails.status.includes('VERIFIED') ||
+            caseDetails.status.includes('FORWARDED') ||
             caseDetails.status.includes('STAMP_REPORTER') ||
             caseDetails.status.includes('TRANSFERRED')
           ) ? (
@@ -298,16 +302,16 @@ const CaseVerification = () => {
               onClick={() => setOpenApproveDialog(true)}
               disabled={
                 caseDetails.status && (
-                  caseDetails.status.includes('VERIFIED') || 
-                  caseDetails.status.includes('FORWARDED') || 
+                  caseDetails.status.includes('VERIFIED') ||
+                  caseDetails.status.includes('FORWARDED') ||
                   caseDetails.status.includes('STAMP_REPORTER') ||
                   caseDetails.status.includes('TRANSFERRED')
                 )
               }
             >
               {caseDetails.status && (
-                caseDetails.status.includes('VERIFIED') || 
-                caseDetails.status.includes('FORWARDED') || 
+                caseDetails.status.includes('VERIFIED') ||
+                caseDetails.status.includes('FORWARDED') ||
                 caseDetails.status.includes('STAMP_REPORTER') ||
                 caseDetails.status.includes('TRANSFERRED')
               ) ? 'Already Forwarded' : 'Assign Department & Forward'}

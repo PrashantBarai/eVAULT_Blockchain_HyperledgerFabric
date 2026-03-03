@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import NotificationsIcon from '@mui/icons-material/Notifications';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import axios from 'axios';
 import { getUserData } from '../../utils/auth';
@@ -28,23 +29,23 @@ const Notifications = () => {
       try {
         const user = getUserData();
         if (!user) throw new Error('You must be logged in to view notifications.');
-        
+
         const lawyer_id = user._id;
         console.log('User data:', user)
         if (!lawyer_id) throw new Error('Lawyer ID not found.');
-  
+
         console.log('Making request to:', `http://localhost:3000/notification/${lawyer_id}`);
-        
+
         const response = await axios.get(`http://localhost:3000/notification/${lawyer_id}`, {
-          headers: { 
+          headers: {
             // Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
         });
-  
+
         console.log('Full API response:', response);
         console.log('Response data:', response.data);
-  
+
         if (response.data && response.data.notifications) {
           console.log('Notifications received:', response.data.notifications);
           setNotifications(response.data.notifications);
@@ -63,15 +64,27 @@ const Notifications = () => {
         setLoading(false);
       }
     };
-  
+
     fetchNotifications();
-  }, []); 
-  // Filter notifications based on the search term
+  }, []);
   const filteredNotifications = notifications.filter(
     (notification) =>
       notification.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      notification.timestamp.toLowerCase().includes(searchTerm.toLowerCase())
+      (notification.timestamp && notification.timestamp.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      const user = getUserData();
+      await axios.put(`http://localhost:3000/notification/${user._id}/mark-read`);
+      // Update local state
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   if (loading) {
     return (
@@ -92,11 +105,31 @@ const Notifications = () => {
   return (
     <Box sx={{ width: '100%', p: 3 }}>
       {/* Header Section */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <NotificationsIcon sx={{ mr: 1 }} />
-        <Typography variant="h4" component="h1">
-          Notifications
-        </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <NotificationsIcon sx={{ mr: 1 }} />
+          <Typography variant="h4" component="h1">
+            Notifications
+            {unreadCount > 0 && (
+              <Chip
+                label={`${unreadCount} New`}
+                color="error"
+                size="small"
+                sx={{ ml: 2, verticalAlign: 'middle' }}
+              />
+            )}
+          </Typography>
+        </Box>
+        {unreadCount > 0 && (
+          <Button
+            variant="outlined"
+            startIcon={<DoneAllIcon />}
+            onClick={handleMarkAllAsRead}
+            sx={{ color: '#6B5ECD', borderColor: '#6B5ECD' }}
+          >
+            Mark all as read
+          </Button>
+        )}
       </Box>
 
       {/* Search Bar */}
@@ -111,37 +144,41 @@ const Notifications = () => {
         }}
         sx={{ mb: 3 }}
       />
-
       {/* Notifications List */}
-      {filteredNotifications.map((notification) => (
-        <Card
-          key={notification.case_id}
-          sx={{
-            width: '100%',
-            mb: 2,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-          }}
-        >
-          <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3 }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                <Typography variant="h6">{notification.message}</Typography>
-                <Chip
-                  label="Notification"
-                  sx={{
-                    bgcolor: '#6B5ECD',
-                    color: 'white',
-                  }}
-                />
+      {
+        filteredNotifications.map((notification) => (
+          <Card
+            key={notification.case_id}
+            sx={{
+              width: '100%',
+              mb: 2,
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              bgcolor: notification.read ? 'transparent' : 'rgba(107, 94, 205, 0.05)',
+              borderLeft: notification.read ? 'none' : '4px solid #6B5ECD',
+            }}
+          >
+            <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3 }}>
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                  <Typography variant="h6">{notification.message}</Typography>
+                  <Chip
+                    label={notification.read ? "Notification" : "New"}
+                    size="small"
+                    sx={{
+                      bgcolor: notification.read ? '#e0e0e0' : '#6B5ECD',
+                      color: notification.read ? '#666' : 'white',
+                    }}
+                  />
+                </Box>
+                <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                  {notification.timestamp}
+                </Typography>
               </Box>
-              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-                {notification.timestamp}
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-      ))}
-    </Box>
+            </CardContent>
+          </Card>
+        ))
+      }
+    </Box >
   );
 };
 

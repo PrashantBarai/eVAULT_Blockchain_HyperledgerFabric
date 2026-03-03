@@ -31,20 +31,21 @@ import UpdateIcon from '@mui/icons-material/Update';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import axios from 'axios';
 import { getUserData, getAuthToken } from '../../utils/auth';
+import { formatDate, DATE_FORMAT_LABEL } from '../../utils/dateFormat';
 
 const CaseDetails = () => {
-  const { id } = useParams(); 
+  const { id } = useParams();
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [openDialog, setOpenDialog] = useState(false); 
+  const [openDialog, setOpenDialog] = useState(false);
   console.log(id);
-  
+
   useEffect(() => {
     const fetchCaseDetails = async () => {
       try {
         // Fetch case details from blockchain - API now aggregates from multiple channels
-        const response = await axios.get(`http://localhost:8000/api/lawyer/case/${id}`); 
+        const response = await axios.get(`http://localhost:8000/api/lawyer/case/${id}`);
         console.log('Case details response:', response.data);
         // Backend returns { success, data } where data is the aggregated case object
         setCaseData(response.data.data || response.data.case || response.data);
@@ -58,7 +59,7 @@ const CaseDetails = () => {
     fetchCaseDetails();
   }, [id]);
 
-  
+
   const handleOpenDialog = () => {
     setOpenDialog(true);
   };
@@ -72,11 +73,11 @@ const CaseDetails = () => {
   const handleSendToRegistrar = async () => {
     try {
       const user = getUserData();
-      
+
       if (!user) {
         throw new Error('Authentication required');
       }
-  
+
       // Step 1: FIRST commit to blockchain (source of truth)
       // Blockchain must succeed before any MongoDB writes
       const blockchainResponse = await axios.post(
@@ -88,11 +89,11 @@ const CaseDetails = () => {
           }
         }
       );
-  
+
       if (!blockchainResponse.data.success) {
         throw new Error(blockchainResponse.data.message || 'Failed to submit case on blockchain');
       }
-      
+
       console.log('Blockchain submit successful:', blockchainResponse.data);
 
       // Step 2: ONLY after blockchain success, assign case to registrar in MongoDB
@@ -100,7 +101,7 @@ const CaseDetails = () => {
       try {
         const assignResponse = await axios.post(
           'http://localhost:3000/assign-case-to-registrar',
-          { 
+          {
             caseID: id,
             caseSubject: caseData.caseSubject || caseData.title || caseData.case_subject,
             lawyerEmail: user.email
@@ -111,7 +112,7 @@ const CaseDetails = () => {
             }
           }
         );
-        
+
         if (assignResponse.data.success) {
           assignedRegistrarName = assignResponse.data.assigned_registrar_name || 'Registrar';
           console.log('Case assigned to registrar in MongoDB:', assignResponse.data);
@@ -124,8 +125,8 @@ const CaseDetails = () => {
 
       alert(`Case successfully submitted to ${assignedRegistrarName} for registrar review.`);
       // Update the case data to reflect the new status
-      setCaseData(prev => ({ 
-        ...prev, 
+      setCaseData(prev => ({
+        ...prev,
         status: 'PENDING_REGISTRAR_REVIEW',
         currentOrg: 'RegistrarsOrg'
       }));
@@ -154,9 +155,9 @@ const CaseDetails = () => {
     id: caseData.id || caseData._id,
     title: caseData.title || caseData.caseSubject || caseData.case_subject,
     status: caseData.status,
-    filedDate: new Date(caseData.filedDate || caseData.filed_date).toLocaleDateString(),
-    nextHearing: caseData.hearings && caseData.hearings.length > 0 
-      ? new Date(caseData.hearings[caseData.hearings.length - 1].date).toLocaleDateString() 
+    filedDate: formatDate(caseData.filedDate || caseData.filed_date),
+    nextHearing: caseData.hearings && caseData.hearings.length > 0
+      ? formatDate(caseData.hearings[caseData.hearings.length - 1].date)
       : 'Not scheduled',
     type: caseData.type || caseData.case_type || 'General',
     description: caseData.description || caseData.case_subject || '',
@@ -166,14 +167,14 @@ const CaseDetails = () => {
     lawyer: caseData.associatedLawyers || caseData.associated_lawyers,
     documents: (caseData.documents || []).map((doc, index) => ({
       name: doc.name || `Document ${index + 1}`,
-      date: doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+      date: doc.uploadedAt ? formatDate(doc.uploadedAt) : formatDate(new Date()),
       cid: doc.hash || doc.id,
       type: doc.type || 'Unknown',
     })),
     // Build timeline from blockchain history and MongoDB timeline
     timeline: (() => {
       const events = [];
-      
+
       // Map status to human-readable event names (defined once for reuse)
       const statusEventMap = {
         'SUBMITTED_TO_REGISTRAR': 'Submitted to Registrar',
@@ -192,22 +193,22 @@ const CaseDetails = () => {
         'PENDING_JUDGMENT': 'Pending Judgment',
         'CASE_CLOSED': 'Case Closed',
       };
-      
+
       // Add filed date as first event
       events.push({
-        date: new Date(caseData.filedDate || caseData.filed_date || caseData.createdAt).toLocaleDateString(),
-        event: 'Case Filed',
-        description: 'Initial case documents submitted to the court',
+        date: formatDate(caseData.createdAt || caseData.filedDate || caseData.filed_date),
+        event: 'Case Created At',
+        description: 'Initial case documents filed on LawLedger',
       });
-      
+
       // Add events from blockchain history if available
       if (caseData.history && Array.isArray(caseData.history)) {
         caseData.history.forEach((entry) => {
           const eventName = statusEventMap[entry.status] || entry.status;
-          const eventDate = entry.timestamp 
-            ? new Date(entry.timestamp).toLocaleDateString()
-            : new Date().toLocaleDateString();
-          
+          const eventDate = entry.timestamp
+            ? formatDate(entry.timestamp)
+            : formatDate(new Date());
+
           events.push({
             date: eventDate,
             event: eventName,
@@ -215,14 +216,14 @@ const CaseDetails = () => {
           });
         });
       }
-      
+
       // Sort events by date
       events.sort((a, b) => {
         const dateA = new Date(a.date);
         const dateB = new Date(b.date);
         return dateA - dateB;
       });
-      
+
       return events;
     })(),
   };
@@ -333,14 +334,8 @@ const CaseDetails = () => {
                   Created At
                 </Typography>
                 <Typography variant="body1">
-                  {caseData.createdAt 
-                    ? new Date(caseData.createdAt).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })
+                  {caseData.createdAt
+                    ? formatDate(caseData.createdAt)
                     : 'N/A'}
                 </Typography>
               </Box>
@@ -350,14 +345,8 @@ const CaseDetails = () => {
                   Last Modified
                 </Typography>
                 <Typography variant="body1">
-                  {caseData.lastModified 
-                    ? new Date(caseData.lastModified).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })
+                  {caseData.lastModified
+                    ? formatDate(caseData.lastModified)
                     : 'N/A'}
                 </Typography>
               </Box>
@@ -370,6 +359,30 @@ const CaseDetails = () => {
                 <Typography variant="body1">{formattedCaseData.description || 'No description provided'}</Typography>
               </Box>
             </Grid>
+            {caseData.judgment && (
+              <Grid item xs={12}>
+                <Card sx={{ borderRadius: 2, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0' }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom color="text.primary">
+                      <GavelIcon sx={{ mr: 1, verticalAlign: 'middle', color: '#6B5ECD' }} />
+                      Judge's Decision
+                    </Typography>
+                    <Divider sx={{ mb: 2 }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} color="text.primary">
+                      {caseData.judgment.decision?.replace(/_/g, ' ')}
+                    </Typography>
+                    <Typography variant="body2" sx={{ mt: 1 }} color="text.secondary">
+                      {caseData.judgment.reasoning}
+                    </Typography>
+                    {caseData.judgment.issuedAt && (
+                      <Typography variant="caption" sx={{ display: 'block', mt: 2 }} color="text.secondary">
+                        Issued on: {formatDate(caseData.judgment.issuedAt)}
+                      </Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            )}
           </Grid>
 
           {/* "Send to Registrar" Button */}

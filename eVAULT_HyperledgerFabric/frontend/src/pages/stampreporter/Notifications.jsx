@@ -11,15 +11,18 @@ import {
   Divider,
   IconButton,
   CircularProgress,
+  Button,
 } from '@mui/material';
 import {
   Gavel as GavelIcon,
   ArrowForward as ArrowForwardIcon,
   InboxOutlined as InboxIcon,
+  DoneAll as DoneAllIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getUserData } from '../../utils/auth';
+import { formatDate } from '../../utils/dateFormat';
 
 const Notifications = () => {
   const navigate = useNavigate();
@@ -46,9 +49,16 @@ const Notifications = () => {
             if (caseResponse.data.success && caseResponse.data.data) {
               const c = caseResponse.data.data;
               const status = (c.status || '').toUpperCase();
-              
+
               // Only show pending cases as notifications
-              if (!status.includes('VERIFIED') && !status.includes('APPROVED') && !status.includes('REJECTED') && !status.includes('FORWARDED_TO')) {
+              if (!status.includes('VERIFIED') &&
+                !status.includes('APPROVED') &&
+                !status.includes('REJECTED') &&
+                !status.includes('VALIDATED') &&
+                !status.includes('BENCHCLERK') &&
+                !status.includes('JUDGE') &&
+                status !== 'FORWARDED_TO_BENCHCLERK' &&
+                status !== 'FORWARDED_TO_STAMPREPORTER_COMPLETED') {
                 caseNotifications.push({
                   id: caseId,
                   type: 'new_case',
@@ -60,6 +70,7 @@ const Notifications = () => {
                   timestamp: c.createdAt || new Date().toISOString(),
                   status: 'New',
                   priority: c.priority || 'Medium',
+                  isActionable: true,
                 });
               }
             }
@@ -73,7 +84,7 @@ const Notifications = () => {
           try {
             const notifResponse = await axios.get(`http://localhost:3000/notification/${user._id}`);
             const userNotifications = notifResponse.data.notifications || [];
-            
+
             userNotifications.forEach(notif => {
               if (!caseNotifications.find(n => n.caseId === notif.case_id)) {
                 caseNotifications.push({
@@ -105,11 +116,21 @@ const Notifications = () => {
 
   const newNotificationsCount = notifications.filter(n => n.status === 'New').length;
 
+  const handleMarkAllAsRead = async () => {
+    try {
+      if (!user?._id) return;
+      await axios.put(`http://localhost:3000/notification/${user._id}/mark-read`);
+      setNotifications(prev => prev.map(n => n.isActionable ? n : { ...n, status: 'Read' }));
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
-      <Paper 
+      <Paper
         elevation={0}
-        sx={{ 
+        sx={{
           p: 3,
           mb: 3,
           background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
@@ -117,10 +138,24 @@ const Notifications = () => {
           borderRadius: 2
         }}
       >
-        <Typography variant="h4" gutterBottom>Notifications</Typography>
-        <Typography variant="subtitle1">
-          You have {newNotificationsCount} new notification{newNotificationsCount !== 1 ? 's' : ''}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography variant="h4" sx={{ mb: 1 }}>Notifications</Typography>
+            <Typography variant="subtitle1">
+              You have {newNotificationsCount} new notification{newNotificationsCount !== 1 ? 's' : ''}
+            </Typography>
+          </Box>
+          {notifications.some(n => n.status === 'New' && !n.isActionable) && (
+            <Button
+              variant="contained"
+              startIcon={<DoneAllIcon />}
+              onClick={handleMarkAllAsRead}
+              sx={{ bgcolor: 'rgba(255,255,255,0.2)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }, boxShadow: 'none' }}
+            >
+              Mark Informational as Read
+            </Button>
+          )}
+        </Box>
       </Paper>
 
       <Paper sx={{ p: 2 }}>
@@ -145,7 +180,7 @@ const Notifications = () => {
             {notifications.map((notification, index) => (
               <React.Fragment key={notification.id}>
                 <ListItem
-                  sx={{ 
+                  sx={{
                     py: 2,
                     bgcolor: notification.status === 'New' ? 'rgba(63, 81, 181, 0.05)' : 'transparent',
                     '&:hover': {
@@ -163,13 +198,13 @@ const Notifications = () => {
                           {notification.case_subject}
                         </Typography>
                         {notification.status === 'New' && (
-                          <Chip 
-                            label="New" 
-                            size="small" 
-                            sx={{ 
-                              bgcolor: '#3f51b5',
+                          <Chip
+                            label={notification.isActionable ? "Action Required" : "New"}
+                            size="small"
+                            sx={{
+                              bgcolor: notification.isActionable ? '#f44336' : '#3f51b5',
                               color: 'white',
-                            }} 
+                            }}
                           />
                         )}
                       </Box>
@@ -184,21 +219,21 @@ const Notifications = () => {
                             Lawyer: {notification.associated_lawyers}
                           </Typography>
                         )}
-                        <Typography 
-                          variant="caption" 
-                          sx={{ 
+                        <Typography
+                          variant="caption"
+                          sx={{
                             display: 'block',
                             mt: 1,
                             color: 'text.secondary'
                           }}
                         >
-                          {notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}
+                          {notification.timestamp ? formatDate(notification.timestamp) : ''}
                         </Typography>
                       </Box>
                     }
                   />
-                  {notification.caseId && (
-                    <IconButton 
+                  {notification.isActionable && notification.caseId && (
+                    <IconButton
                       color="primary"
                       onClick={() => navigate(`/stampreporter/case-verification/${notification.caseId}`)}
                       sx={{ color: '#3f51b5' }}

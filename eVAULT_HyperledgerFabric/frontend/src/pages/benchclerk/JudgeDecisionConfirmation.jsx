@@ -9,6 +9,7 @@ import {
   Gavel as GavelIcon, Check as CheckIcon, Visibility as VisibilityIcon,
   Close as CloseIcon,
 } from '@mui/icons-material';
+import { formatDate } from '../../utils/dateFormat';
 
 const FABRIC_API = 'http://localhost:8000/api/benchclerk';
 
@@ -105,7 +106,7 @@ const JudgeDecisionConfirmation = () => {
                   <TableCell>
                     <Chip label={c.judgment?.decision || 'Pending'} color={getDecisionColor(c.judgment?.decision)} size="small" icon={<GavelIcon />} />
                   </TableCell>
-                  <TableCell>{c.judgment?.issuedAt ? new Date(c.judgment.issuedAt).toLocaleDateString() : 'N/A'}</TableCell>
+                  <TableCell>{c.judgment?.issuedAt ? formatDate(c.judgment.issuedAt) : 'N/A'}</TableCell>
                   <TableCell>
                     <IconButton onClick={() => handleViewDecision(c)} sx={{ color: '#4a90e2' }}>
                       <VisibilityIcon />
@@ -157,7 +158,7 @@ const JudgeDecisionConfirmation = () => {
                       </Typography>
                       <Typography variant="body1" sx={{ mt: 1 }}><strong>Reasoning:</strong> {selectedCase.judgment.reasoning || 'N/A'}</Typography>
                       <Typography variant="body1" sx={{ mt: 1 }}><strong>Judge:</strong> {selectedCase.judgment.judgeId || 'N/A'}</Typography>
-                      <Typography variant="body1" sx={{ mt: 1 }}><strong>Issued:</strong> {selectedCase.judgment.issuedAt ? new Date(selectedCase.judgment.issuedAt).toLocaleString() : 'N/A'}</Typography>
+                      <Typography variant="body1" sx={{ mt: 1 }}><strong>Issued:</strong> {selectedCase.judgment.issuedAt ? formatDate(selectedCase.judgment.issuedAt) : 'N/A'}</Typography>
                     </CardContent>
                   </Card>
                 </Grid>
@@ -168,7 +169,7 @@ const JudgeDecisionConfirmation = () => {
                   <Typography variant="h6" sx={{ mt: 2 }}>Case History</Typography>
                   {selectedCase.history.map((h, i) => (
                     <Card key={i} sx={{ mt: 1 }}><CardContent>
-                      <Typography variant="body2"><strong>{h.status}</strong> - {h.organization} ({new Date(h.timestamp).toLocaleString()})</Typography>
+                      <Typography variant="body2"><strong>{h.status}</strong> - {h.organization} ({formatDate(h.timestamp)})</Typography>
                       {h.comments && <Typography variant="caption">{h.comments}</Typography>}
                     </CardContent></Card>
                   ))}

@@ -23,8 +23,8 @@ import { getUserData } from '../../utils/auth';
 import axios from 'axios';
 
 const StatCard = ({ title, value, icon, color }) => (
-  <Card 
-    sx={{ 
+  <Card
+    sx={{
       height: '100%',
       background: `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)`,
       color: 'white',
@@ -82,7 +82,7 @@ const Dashboard = () => {
             if (caseResponse.data.success && caseResponse.data.data) {
               validCaseCount++;
               const status = (caseResponse.data.data.status || '').toUpperCase();
-              if (status.includes('VERIFIED') || status.includes('APPROVED') || status.includes('FORWARDED_TO')) {
+              if (status.includes('VERIFIED') || status.includes('VALIDATED') || status.includes('APPROVED') || status.includes('FORWARDED_TO') || status.includes('PENDING_BENCHCLERK')) {
                 verifiedCount++;
               } else if (status.includes('REJECTED')) {
                 rejectedCount++;
@@ -168,11 +168,11 @@ const Dashboard = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Paper 
+      <Paper
         elevation={0}
-        sx={{ 
-          p: 3, 
-          mb: 4, 
+        sx={{
+          p: 3,
+          mb: 4,
           background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
           color: 'white',
           borderRadius: 2
@@ -180,8 +180,8 @@ const Dashboard = () => {
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar
-            sx={{ 
-              width: 80, 
+            sx={{
+              width: 80,
               height: 80,
               bgcolor: 'white',
               color: '#3f51b5'
@@ -195,10 +195,10 @@ const Dashboard = () => {
               {user?.designation || 'Stamp Reporter'} | {user?.reportingArea || 'Court'}
             </Typography>
           </Box>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             startIcon={<Person />}
-            sx={{ 
+            sx={{
               ml: 'auto',
               bgcolor: '#3f51b5',
               color: 'white',

@@ -30,6 +30,7 @@ import {
 } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserData, getAuthToken } from '../../utils/auth';
+import { formatDate } from '../../utils/dateFormat';
 
 const DocumentCard = ({ type, name, size }) => {
   const getIcon = () => {
@@ -78,7 +79,7 @@ const CaseVerification = () => {
       try {
         setLoading(true);
         const user = getUserData();
-        
+
         if (!user) {
           throw new Error('Authentication required');
         }
@@ -92,7 +93,7 @@ const CaseVerification = () => {
         }
 
         const data = await response.json();
-        
+
         if (data.success && data.data) {
           const c = data.data;
           setCaseData({
@@ -121,20 +122,26 @@ const CaseVerification = () => {
   }, [id]);
 
   const handleApprove = async () => {
+    if (!digitalSignature || digitalSignature.trim() === '') {
+      setError('Digital signature is required to validate and forward the case.');
+      return;
+    }
+
     try {
       setActionLoading(true);
       setError('');
       const user = getUserData();
       let assignedBenchClerkName = '';
-      
+
       // Step 1: BLOCKCHAIN FIRST (source of truth)
       // validate-and-forward does ALL blockchain ops + MongoDB update in backend
       const response = await fetch('http://localhost:8000/api/stampreporter/case/validate-and-forward', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           caseID: id,
           validationDetails: {
+            isValid: true,
             digital_signature: digitalSignature,
             verifiedBy: user?.username || user?.email || 'Stamp Reporter',
             verifiedAt: new Date().toISOString(),
@@ -192,7 +199,7 @@ const CaseVerification = () => {
       setShowSuccess(true);
       setSuccessMessage(`Case validated and forwarded to ${assignedBenchClerkName || 'Bench Clerk'} successfully!`);
       setOpenSignDialog(false);
-      
+
       alert(`Case successfully validated and assigned to ${assignedBenchClerkName || 'Bench Clerk'} for further processing.`);
       setTimeout(() => navigate("/stampreporter/dashboard"), 2000);
     } catch (err) {
@@ -207,18 +214,18 @@ const CaseVerification = () => {
    */
   const handleCaseAction = async () => {
     if (!actionType || !actionReason) return;
-    
+
     try {
       setActionLoading(true);
       setError('');
       const user = getUserData();
-      
+
       const isReject = actionType === 'reject';
-      const endpoint = isReject 
+      const endpoint = isReject
         ? 'http://localhost:8000/api/stampreporter/case/reject'
         : 'http://localhost:8000/api/stampreporter/case/on-hold';
-      
-      const body = isReject 
+
+      const body = isReject
         ? { caseID: id, reason: actionReason, rejectedBy: user?.username || user?.email || 'Stamp Reporter' }
         : { caseID: id, reason: actionReason, heldBy: user?.username || user?.email || 'Stamp Reporter' };
 
@@ -257,7 +264,7 @@ const CaseVerification = () => {
       setSuccessMessage(`Case successfully ${statusMsg}!`);
       setShowSuccess(true);
       setOpenActionDialog(false);
-      
+
       alert(`Case successfully ${statusMsg}. Reason: ${actionReason}`);
       setTimeout(() => navigate("/stampreporter/dashboard"), 2000);
     } catch (err) {
@@ -369,7 +376,7 @@ const CaseVerification = () => {
               Filed Date
             </Typography>
             <Typography variant="body1">
-              {new Date(caseData.filed_date).toLocaleDateString() || "N/A"}
+              {formatDate(caseData.filed_date) || "N/A"}
             </Typography>
           </Grid>
 
@@ -389,7 +396,7 @@ const CaseVerification = () => {
             {caseData.documents && caseData.documents.length > 0 ? (
               caseData.documents.map((doc, index) => (
                 <Grid item xs={12} sm={6} md={4} key={doc.id || index}>
-                  <Button 
+                  <Button
                     component="a"
                     href={doc.hash ? `https://lime-occasional-xerinae-665.mypinata.cloud/ipfs/${doc.hash}` : '#'}
                     target="_blank"
@@ -400,7 +407,7 @@ const CaseVerification = () => {
                     <DocumentCard
                       type={getDocumentType(doc.name)}
                       name={doc.name || `Document ${index + 1}`}
-                      size={doc.uploadedAt ? `Uploaded: ${new Date(doc.uploadedAt).toLocaleDateString()}` : null}
+                      size={doc.uploadedAt ? `Uploaded: ${formatDate(doc.uploadedAt)}` : null}
                     />
                   </Button>
                 </Grid>
@@ -417,8 +424,8 @@ const CaseVerification = () => {
 
         {/* Check if case is already validated/forwarded */}
         {caseData.status && (
-          caseData.status.includes('VALIDATED') || 
-          caseData.status.includes('FORWARDED') || 
+          caseData.status.includes('VALIDATED') ||
+          caseData.status.includes('FORWARDED') ||
           caseData.status.includes('BENCH_CLERK') ||
           caseData.status.includes('JUDGE') ||
           caseData.status.includes('REJECTED') ||
@@ -430,53 +437,53 @@ const CaseVerification = () => {
         ) : null}
 
         {!(caseData.status && (
-          caseData.status.includes('VALIDATED') || 
-          caseData.status.includes('FORWARDED') || 
+          caseData.status.includes('VALIDATED') ||
+          caseData.status.includes('FORWARDED') ||
           caseData.status.includes('BENCH_CLERK') ||
           caseData.status.includes('JUDGE') ||
           caseData.status.includes('REJECTED') ||
           caseData.status.includes('ON_HOLD') ||
           caseData.status === 'Verified'
         )) && (
-          <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end", mt: 4 }}>
-            <Button
-              variant="contained"
-              color="error"
-              startIcon={<CancelIcon />}
-              onClick={() => {
-                setActionType('reject');
-                setActionReason('');
-                setOpenActionDialog(true);
-              }}
-              disabled={actionLoading}
-            >
-              Reject Case
-            </Button>
-            <Button
-              variant="contained"
-              color="warning"
-              startIcon={<PauseCircleIcon />}
-              onClick={() => {
-                setActionType('on-hold');
-                setActionReason('');
-                setOpenActionDialog(true);
-              }}
-              disabled={actionLoading}
-              sx={{ color: 'white' }}
-            >
-              Put On Hold
-            </Button>
-            <Button
-              variant="contained"
-              color="success"
-              startIcon={<CheckCircleIcon />}
-              onClick={() => setOpenSignDialog(true)}
-              disabled={actionLoading}
-            >
-              Validate & Forward to Bench Clerk
-            </Button>
-          </Box>
-        )}
+            <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end", mt: 4 }}>
+              <Button
+                variant="contained"
+                color="error"
+                startIcon={<CancelIcon />}
+                onClick={() => {
+                  setActionType('reject');
+                  setActionReason('');
+                  setOpenActionDialog(true);
+                }}
+                disabled={actionLoading}
+              >
+                Reject Case
+              </Button>
+              <Button
+                variant="contained"
+                color="warning"
+                startIcon={<PauseCircleIcon />}
+                onClick={() => {
+                  setActionType('on-hold');
+                  setActionReason('');
+                  setOpenActionDialog(true);
+                }}
+                disabled={actionLoading}
+                sx={{ color: 'white' }}
+              >
+                Put On Hold
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<CheckCircleIcon />}
+                onClick={() => setOpenSignDialog(true)}
+                disabled={actionLoading}
+              >
+                Validate & Forward to Bench Clerk
+              </Button>
+            </Box>
+          )}
       </Paper>
 
       {/* Digital Signature Dialog (Approve) */}
@@ -548,20 +555,20 @@ const CaseVerification = () => {
                 />
               </RadioGroup>
             </FormControl>
-            
+
             {actionType === 'reject' && (
               <Alert severity="error" sx={{ mb: 2 }}>
-                <strong>Reject:</strong> The case will be sent back to the lawyer as rejected. 
+                <strong>Reject:</strong> The case will be sent back to the lawyer as rejected.
                 The lawyer must resubmit the case from scratch.
               </Alert>
             )}
             {actionType === 'on-hold' && (
               <Alert severity="warning" sx={{ mb: 2 }}>
-                <strong>On Hold:</strong> The case will be held for review. 
+                <strong>On Hold:</strong> The case will be held for review.
                 The lawyer will be notified and may provide additional information.
               </Alert>
             )}
-            
+
             <TextField
               autoFocus
               margin="dense"
@@ -574,8 +581,8 @@ const CaseVerification = () => {
               onChange={(e) => setActionReason(e.target.value)}
               disabled={actionLoading}
               placeholder={
-                actionType === 'reject' 
-                  ? 'Explain why this case is being rejected...' 
+                actionType === 'reject'
+                  ? 'Explain why this case is being rejected...'
                   : 'Explain why this case is being put on hold...'
               }
             />
@@ -593,10 +600,10 @@ const CaseVerification = () => {
             endIcon={actionLoading && <CircularProgress size={20} />}
             sx={actionType === 'on-hold' ? { color: 'white' } : {}}
           >
-            {actionLoading 
-              ? 'Processing...' 
-              : actionType === 'reject' 
-                ? 'Confirm Rejection' 
+            {actionLoading
+              ? 'Processing...'
+              : actionType === 'reject'
+                ? 'Confirm Rejection'
                 : 'Confirm On Hold'}
           </Button>
         </DialogActions>
