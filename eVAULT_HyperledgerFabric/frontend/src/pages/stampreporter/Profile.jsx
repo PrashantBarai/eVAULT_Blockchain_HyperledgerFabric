@@ -11,6 +11,10 @@ import {
   IconButton,
   Alert,
   CircularProgress,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -32,6 +36,7 @@ const Profile = () => {
     phone: '',
     reporterId: '',
     reportingArea: '',
+    department: '',
     certificationDate: '',
   });
 
@@ -45,7 +50,7 @@ const Profile = () => {
 
         // Fetch profile from MongoDB
         const response = await axios.get(`http://localhost:3000/get-profile/${user._id}`);
-        
+
         if (response.data) {
           // API returns { profile: {...} }
           const data = response.data.profile || response.data;
@@ -55,6 +60,7 @@ const Profile = () => {
             phone: data.phone_number || data.phone || '',
             reporterId: data.reporterId || '',
             reportingArea: data.reportingArea || '',
+            department: data.department || '',
             certificationDate: data.certificationDate || '',
           };
           setProfile(profileData);
@@ -71,6 +77,7 @@ const Profile = () => {
             phone: user.phone_number || user.phone || '',
             reporterId: user.reporterId || '',
             reportingArea: user.reportingArea || '',
+            department: user.department || '',
             certificationDate: user.certificationDate || '',
           };
           setProfile(profileData);
@@ -96,6 +103,7 @@ const Profile = () => {
         username: editedProfile.name,
         phone_number: editedProfile.phone,
         reportingArea: editedProfile.reportingArea,
+        department: editedProfile.department,
       });
 
       setProfile(editedProfile);
@@ -116,8 +124,8 @@ const Profile = () => {
   return (
     <Box sx={{ p: 3 }}>
       {showSuccess && (
-        <Alert 
-          severity="success" 
+        <Alert
+          severity="success"
           sx={{ mb: 3 }}
         >
           Profile updated successfully!
@@ -125,8 +133,8 @@ const Profile = () => {
       )}
 
       {error && (
-        <Alert 
-          severity="error" 
+        <Alert
+          severity="error"
           sx={{ mb: 3 }}
           onClose={() => setError(null)}
         >
@@ -140,9 +148,9 @@ const Profile = () => {
         </Box>
       ) : (
         <>
-          <Paper 
+          <Paper
             elevation={0}
-            sx={{ 
+            sx={{
               p: 3,
               mb: 3,
               background: 'linear-gradient(45deg, #1a237e 30%, #3f51b5 90%)',
@@ -152,8 +160,8 @@ const Profile = () => {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
               <Avatar
-                sx={{ 
-                  width: 100, 
+                sx={{
+                  width: 100,
                   height: 100,
                   bgcolor: 'white',
                   color: '#3f51b5'
@@ -168,8 +176,8 @@ const Profile = () => {
                   Reporter ID: {profile.reporterId || 'N/A'}
                 </Typography>
               </Box>
-              <IconButton 
-                sx={{ 
+              <IconButton
+                sx={{
                   ml: 'auto',
                   color: 'white',
                   bgcolor: 'rgba(255, 255, 255, 0.1)',
@@ -184,89 +192,118 @@ const Profile = () => {
             </Box>
           </Paper>
 
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>Personal Information</Typography>
-        <Divider sx={{ mb: 3 }} />
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>Personal Information</Typography>
+            <Divider sx={{ mb: 3 }} />
 
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Full Name"
-              value={editedProfile.name}
-              onChange={(e) => setEditedProfile({ ...editedProfile, name: e.target.value })}
-              disabled={!isEditing}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Reporter ID"
-              value={editedProfile.reporterId}
-              disabled={true}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Email"
-              value={editedProfile.email}
-              disabled={true}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Phone"
-              value={editedProfile.phone}
-              onChange={(e) => setEditedProfile({ ...editedProfile, phone: e.target.value })}
-              disabled={!isEditing}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Reporting Area"
-              value={editedProfile.reportingArea}
-              onChange={(e) => setEditedProfile({ ...editedProfile, reportingArea: e.target.value })}
-              disabled={!isEditing}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Certification Date"
-              value={editedProfile.certificationDate}
-              disabled={true}
-            />
-          </Grid>
-        </Grid>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Full Name"
+                  value={editedProfile.name}
+                  onChange={(e) => setEditedProfile({ ...editedProfile, name: e.target.value })}
+                  disabled={!isEditing}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Reporter ID"
+                  value={editedProfile.reporterId}
+                  disabled={true}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Email"
+                  value={editedProfile.email}
+                  disabled={true}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Phone"
+                  value={editedProfile.phone}
+                  onChange={(e) => setEditedProfile({ ...editedProfile, phone: e.target.value })}
+                  disabled={!isEditing}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth disabled={!isEditing}>
+                  <InputLabel>Court</InputLabel>
+                  <Select
+                    value={editedProfile.reportingArea}
+                    label="Court"
+                    onChange={(e) => setEditedProfile({ ...editedProfile, reportingArea: e.target.value })}
+                  >
+                    <MenuItem value="Supreme Court">Supreme Court</MenuItem>
+                    <MenuItem value="High Court">High Court</MenuItem>
+                    <MenuItem value="District Court">District Court</MenuItem>
+                    <MenuItem value="Sessions Court">Sessions Court</MenuItem>
+                    <MenuItem value="Magistrate Court">Magistrate Court</MenuItem>
+                    <MenuItem value="Tribunal">Tribunal</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth disabled={!isEditing}>
+                  <InputLabel>Department</InputLabel>
+                  <Select
+                    value={editedProfile.department}
+                    label="Department"
+                    onChange={(e) => setEditedProfile({ ...editedProfile, department: e.target.value })}
+                  >
+                    <MenuItem value="Civil">Civil</MenuItem>
+                    <MenuItem value="Criminal">Criminal</MenuItem>
+                    <MenuItem value="Family">Family</MenuItem>
+                    <MenuItem value="Corporate">Corporate</MenuItem>
+                    <MenuItem value="Constitutional">Constitutional</MenuItem>
+                    <MenuItem value="Revenue">Revenue</MenuItem>
+                    <MenuItem value="Labour">Labour</MenuItem>
+                    <MenuItem value="Consumer">Consumer</MenuItem>
+                    <MenuItem value="Taxation">Taxation</MenuItem>
+                    <MenuItem value="Cyber">Cyber</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Certification Date"
+                  value={editedProfile.certificationDate}
+                  disabled={true}
+                />
+              </Grid>
+            </Grid>
 
-        {isEditing && (
-          <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'flex-end' }}>
-            <Button
-              variant="outlined"
-              startIcon={<CancelIcon />}
-              onClick={handleCancel}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<SaveIcon />}
-              onClick={handleSave}
-              sx={{ 
-                bgcolor: '#3f51b5',
-                '&:hover': {
-                  bgcolor: '#2f3f8f',
-                }
-              }}
-            >
-              Save Changes
-            </Button>
-          </Box>
-        )}
-      </Paper>
+            {isEditing && (
+              <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'flex-end' }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<CancelIcon />}
+                  onClick={handleCancel}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSave}
+                  sx={{
+                    bgcolor: '#3f51b5',
+                    '&:hover': {
+                      bgcolor: '#2f3f8f',
+                    }
+                  }}
+                >
+                  Save Changes
+                </Button>
+              </Box>
+            )}
+          </Paper>
         </>
       )}
     </Box>

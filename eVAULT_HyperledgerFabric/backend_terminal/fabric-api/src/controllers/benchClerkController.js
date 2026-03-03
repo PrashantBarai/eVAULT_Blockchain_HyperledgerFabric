@@ -115,17 +115,27 @@ const benchClerkController = {
 
             const result = await contract.evaluateTransaction('QueryStats');
             const resultStr = result.toString();
-            const stats = resultStr ? JSON.parse(resultStr) : { totalCases: 0, pendingCases: 0, forwardedToJudge: 0, judgedCases: 0, confirmedCases: 0 };
+            const rawStats = resultStr ? JSON.parse(resultStr) : { pendingCases: 0, forwardedToJudge: 0, hearingsScheduled: 0, decisionsConfirmed: 0 };
+
+            const stats = {
+                totalCases: (rawStats.pendingCases || 0) + (rawStats.forwardedToJudge || 0) + (rawStats.hearingsScheduled || 0) + (rawStats.decisionsConfirmed || 0),
+                pendingCases: rawStats.pendingCases || 0,
+                forwardedCases: rawStats.forwardedToJudge || 0,
+                completedCases: rawStats.decisionsConfirmed || 0
+            };
+
             return res.status(200).json({ success: true, data: stats });
         } catch (error) {
             logger.error(`Error getting stats: ${error.message}`);
             return res.status(200).json({
                 success: true,
-                data: { totalCases: 0, pendingCases: 0, forwardedToJudge: 0, judgedCases: 0, confirmedCases: 0 },
+                data: { totalCases: 0, pendingCases: 0, forwardedCases: 0, completedCases: 0 },
                 message: 'Stats unavailable, returning defaults'
             });
         } finally {
-            await disconnectFromNetwork(gateway);
+            if (gateway) {
+                await disconnectFromNetwork(gateway);
+            }
         }
     },
 

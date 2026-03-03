@@ -87,4 +87,11 @@ router.get('/case/track/:caseID', lawyerController.trackCaseStatus);
  */
 router.get('/stats', lawyerController.queryStats);
 
+/**
+ * @route   POST /api/lawyer/case/follow-up
+ * @desc    Submit a follow-up for a judged case
+ * @access  Public
+ */
+router.post('/case/follow-up', lawyerController.followUpCase);
+
 module.exports = router;

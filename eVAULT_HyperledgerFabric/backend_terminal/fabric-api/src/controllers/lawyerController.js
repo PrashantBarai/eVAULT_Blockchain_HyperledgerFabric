@@ -207,6 +207,11 @@ const lawyerController = {
                 logger.info(`[Channel 1] Retrieved case ${caseID} from lawyer-registrar-channel`);
             } catch (err) {
                 logger.warn(`[Channel 1] Could not fetch from lawyer-registrar-channel: ${err.message}`);
+                // If there's a schema error (e.g. signatureHistory: null bug), we should explicitly fail
+                // to let the user know the case data is corrupted on the ledger, instead of just returning 404
+                if (err.message && err.message.includes('Value did not match schema') && err.message.includes('signatureHistory')) {
+                    throw new Error(`CRITICAL DATA CORRUPTION: This case has corrupted data on the ledger from a previous bug (signatureHistory is null). Please create a new case to test the follow-up flow. Full error: ${err.message}`);
+                }
             } finally {
                 if (gateway1) await disconnectFromNetwork(gateway1);
                 gateway1 = null;
@@ -251,6 +256,9 @@ const lawyerController = {
                 logger.info(`[Channel 2] Retrieved case ${caseID} from stampreporter-lawyer-channel`);
             } catch (err) {
                 logger.debug(`[Channel 2] Case not found on stampreporter-lawyer-channel: ${err.message}`);
+                if (err.message && err.message.includes('Value did not match schema') && err.message.includes('signatureHistory')) {
+                    throw new Error(`CRITICAL DATA CORRUPTION: This case has corrupted data on stampreporter-lawyer-channel from a previous bug (signatureHistory is null). Please create a new case. Full error: ${err.message}`);
+                }
             } finally {
                 if (gateway2) await disconnectFromNetwork(gateway2);
                 gateway2 = null;
@@ -295,6 +303,9 @@ const lawyerController = {
                 logger.info(`[Channel 3] Retrieved case ${caseID} from benchclerk-lawyer-channel`);
             } catch (err) {
                 logger.debug(`[Channel 3] Case not found on benchclerk-lawyer-channel: ${err.message}`);
+                if (err.message && err.message.includes('Value did not match schema') && err.message.includes('signatureHistory')) {
+                    throw new Error(`CRITICAL DATA CORRUPTION: This case has corrupted data on benchclerk-lawyer-channel from a previous bug (signatureHistory is null). Please create a new case. Full error: ${err.message}`);
+                }
             } finally {
                 if (gateway3) await disconnectFromNetwork(gateway3);
                 gateway3 = null;
@@ -926,6 +937,106 @@ const lawyerController = {
                 data: { totalCases: 0, pendingCases: 0, filedCases: 0, forwardedCases: 0 }
             });
         } finally {
+            await disconnectFromNetwork(gateway);
+        }
+    },
+
+    /**
+     * Follow up on a judged case - submit new evidence and route back to registrar
+     */
+    followUpCase: async (req, res) => {
+        const { caseID, reason, documents } = req.body;
+        if (!caseID || !reason) {
+            return res.status(400).json({ error: 'Missing caseID or reason' });
+        }
+
+        let gateway, validationGateway;
+        try {
+            const fabricConfig = config.fabric.lawyer;
+
+            // Step 1: Read case from benchclerk-lawyer-channel to validate status
+            // (RegistrarsOrg peer can't access this channel, so validation must happen at API level)
+            logger.info(`Validating case ${caseID} status from benchclerk-lawyer-channel`);
+            const { contract: validationContract, gateway: vg } = await connectToNetwork(
+                fabricConfig.org,
+                fabricConfig.user,
+                'benchclerk-lawyer-channel',
+                fabricConfig.chaincodeName
+            );
+            validationGateway = vg;
+
+            const caseBytes = await validationContract.evaluateTransaction('GetCase', caseID);
+            await disconnectFromNetwork(validationGateway);
+            validationGateway = null;
+
+            const caseData = JSON.parse(caseBytes.toString());
+            const validStatuses = ['JUDGMENT_ISSUED', 'DECISION_CONFIRMED', 'CASE_CLOSED', 'CASE_APPROVED', 'CASE_DISMISSED', 'CASE_SETTLED'];
+
+            if (!validStatuses.includes(caseData.status)) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Case is not in a judged/closed state (current: ${caseData.status}), cannot follow up`
+                });
+            }
+            logger.info(`Case ${caseID} status validated: ${caseData.status}`);
+
+            // Step 2: Submit FollowUpCase on lawyer-registrar-channel
+            const { contract, gateway: g } = await connectToNetwork(
+                fabricConfig.org,
+                fabricConfig.user,
+                fabricConfig.channelName,
+                fabricConfig.chaincodeName
+            );
+            gateway = g;
+
+            const followUpData = JSON.stringify({
+                reason: reason,
+                documents: documents || []
+            });
+
+            await contract.submitTransaction('FollowUpCase', caseID, followUpData);
+            logger.info(`Follow-up submitted for case ${caseID}`);
+
+            // Step 3: Assign back to registrar in MongoDB
+            try {
+                await axios.post(`${CLIENT_BACKEND_URL}/assign-case-to-registrar`, {
+                    caseID: caseID,
+                    caseSubject: `Follow-up: ${reason}`,
+                    lawyerEmail: ''
+                });
+                logger.info(`Follow-up case ${caseID} assigned to registrar in MongoDB`);
+            } catch (mongoErr) {
+                logger.warn(`MongoDB registrar assignment for follow-up failed: ${mongoErr.message}`);
+            }
+
+            // Step 4: Update case status in MongoDB
+            try {
+                await axios.post(`${CLIENT_BACKEND_URL}/update-case-status`, {
+                    caseID: caseID,
+                    status: 'FOLLOW_UP_SUBMITTED',
+                    timeline: [{
+                        status: 'FOLLOW_UP_SUBMITTED',
+                        timestamp: new Date().toISOString(),
+                        comment: `Follow-up submitted: ${reason}`,
+                        updatedBy: 'Lawyer'
+                    }]
+                });
+            } catch (statusErr) {
+                logger.warn(`MongoDB status update for follow-up failed: ${statusErr.message}`);
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: `Follow-up for case ${caseID} submitted to registrar successfully`
+            });
+        } catch (error) {
+            logger.error(`Error submitting follow-up: ${error.message}`);
+            return res.status(500).json({
+                success: false,
+                message: `Failed to submit follow-up: ${error.message}`
+            });
+        } finally {
+            await disconnectFromNetwork(validationGateway);
             await disconnectFromNetwork(gateway);
         }
     }

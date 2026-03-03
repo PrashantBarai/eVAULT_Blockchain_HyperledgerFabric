@@ -17,6 +17,8 @@ import {
   Person,
   CheckCircle,
   Cancel,
+  Fingerprint,
+  ContentCopy,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { getUserData } from '../../utils/auth';
@@ -59,6 +61,8 @@ const Dashboard = () => {
     notifications: 0
   });
   const user = getUserData();
+  const [digitalSignature, setDigitalSignature] = useState('');
+  const [signCopied, setSignCopied] = useState(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -123,6 +127,20 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
+
+    // Fetch digital signature from profile
+    const fetchSignature = async () => {
+      try {
+        if (!user?._id) return;
+        const profileRes = await axios.get(`http://localhost:3000/get-profile/${user._id}`);
+        if (profileRes.data.success && profileRes.data.profile) {
+          setDigitalSignature(profileRes.data.profile.digital_sign || '');
+        }
+      } catch (err) {
+        console.error('Error fetching digital signature:', err);
+      }
+    };
+    fetchSignature();
   }, []);
 
   const statCards = [
@@ -212,6 +230,53 @@ const Dashboard = () => {
           </Button>
         </Box>
       </Paper>
+
+      {/* Digital Signature Card */}
+      {digitalSignature && (
+        <Paper
+          elevation={2}
+          sx={{
+            p: 3,
+            mb: 4,
+            background: 'linear-gradient(135deg, #1b5e20 0%, #388e3c 100%)',
+            color: 'white',
+            borderRadius: 2,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2
+          }}
+        >
+          <Fingerprint sx={{ fontSize: 48 }} />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="subtitle2" sx={{ opacity: 0.9 }}>
+              Your Unique Digital Signature
+            </Typography>
+            <Typography variant="h6" sx={{ fontFamily: 'monospace', letterSpacing: 1 }}>
+              {digitalSignature}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.8 }}>
+              Use this signature when validating cases. It is uniquely tied to your account.
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ContentCopy />}
+            onClick={() => {
+              navigator.clipboard.writeText(digitalSignature);
+              setSignCopied(true);
+              setTimeout(() => setSignCopied(false), 2000);
+            }}
+            sx={{
+              color: 'white',
+              borderColor: 'white',
+              '&:hover': { borderColor: '#c8e6c9', bgcolor: 'rgba(255,255,255,0.1)' }
+            }}
+          >
+            {signCopied ? 'Copied!' : 'Copy'}
+          </Button>
+        </Paper>
+      )}
 
       <Grid container spacing={3}>
         {statCards.map((stat, index) => (

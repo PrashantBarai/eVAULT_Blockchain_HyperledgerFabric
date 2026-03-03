@@ -631,6 +631,86 @@ func (s *LawyerContract) GetCasesByLawyerID(ctx contractapi.TransactionContextIn
 	return cases, nil
 }
 
+// FollowUpCase allows a lawyer to follow up on a judged/closed case
+// It appends new documents, updates description, and routes back to registrar
+// NOTE: Status validation is handled by the API controller which reads from
+// benchclerk-lawyer-channel (RegistrarsOrg peer can't access that channel for endorsement)
+func (s *LawyerContract) FollowUpCase(ctx contractapi.TransactionContextInterface, caseID string, followUpData string) error {
+	// Get the case from local state
+	caseJSON, err := ctx.GetStub().GetState(caseID)
+	if err != nil {
+		return fmt.Errorf("failed to read case: %v", err)
+	}
+	if caseJSON == nil {
+		return fmt.Errorf("case does not exist: %s", caseID)
+	}
+
+	var caseObj Case
+	err = json.Unmarshal(caseJSON, &caseObj)
+	if err != nil {
+		return err
+	}
+
+	// Parse follow-up data
+	var followUp struct {
+		Reason    string     `json:"reason"`
+		Documents []Document `json:"documents"`
+	}
+	err = json.Unmarshal([]byte(followUpData), &followUp)
+	if err != nil {
+		return fmt.Errorf("failed to parse follow-up data: %v", err)
+	}
+
+	// Get current timestamp
+	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return fmt.Errorf("failed to get transaction timestamp: %v", err)
+	}
+	timestamp := time.Unix(txTimestamp.Seconds, 0).Format(time.RFC3339)
+
+	// Initialize arrays if nil
+	if caseObj.Documents == nil {
+		caseObj.Documents = make([]Document, 0)
+	}
+	if caseObj.History == nil {
+		caseObj.History = make([]HistoryItem, 0)
+	}
+
+	// Append new documents
+	for i := range followUp.Documents {
+		followUp.Documents[i].UploadedAt = timestamp
+		followUp.Documents[i].Validated = false
+		if followUp.Documents[i].SignatureHistory == nil {
+			followUp.Documents[i].SignatureHistory = make([]DocumentSignature, 0)
+		}
+	}
+	caseObj.Documents = append(caseObj.Documents, followUp.Documents...)
+
+	// Update case state for follow-up
+	caseObj.Status = "FOLLOW_UP_SUBMITTED"
+	caseObj.CurrentOrg = "RegistrarsOrg"
+	caseObj.LastModified = timestamp
+	caseObj.History = append(caseObj.History, HistoryItem{
+		Status:       "FOLLOW_UP_SUBMITTED",
+		Organization: "LawyersOrg",
+		Timestamp:    timestamp,
+		Comments:     fmt.Sprintf("Follow-up submitted: %s", followUp.Reason),
+	})
+
+	// Save updated case in lawyer's state
+	updatedCaseJSON, err := json.Marshal(caseObj)
+	if err != nil {
+		return err
+	}
+	err = ctx.GetStub().PutState(caseObj.ID, updatedCaseJSON)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Successfully saved follow-up case: %s", caseID)
+	return nil
+}
+
 // StoreCase stores a case submitted from another organization's chaincode
 func (s *LawyerContract) StoreCase(ctx contractapi.TransactionContextInterface, caseJSON string) error {
 	log.Printf("StoreCase called with payload length: %d bytes", len(caseJSON))

@@ -360,35 +360,68 @@ const judgeController = {
      * Get case statistics from judge namespace
      */
     queryStats: async (req, res) => {
-        let gateway;
+        let judgeGateway, bcGateway;
         try {
             const judgeConfig = config.fabric.judge;
-            const { contract, gateway: g } = await connectToNetwork(
+            const benchClerkConfig = config.fabric.benchclerk;
+
+            // 1. Get raw stats and all cases from judge namespace
+            const { contract: judgeContract, gateway: jGateway } = await connectToNetwork(
                 judgeConfig.org, judgeConfig.user,
                 judgeConfig.channelName, judgeConfig.chaincodeName
             );
-            gateway = g;
+            judgeGateway = jGateway;
 
-            const result = await contract.evaluateTransaction('QueryStats');
+            const result = await judgeContract.evaluateTransaction('QueryStats');
             const resultStr = result.toString();
-            const stats = resultStr ? JSON.parse(resultStr) : { totalCases: 0, pendingCases: 0, activeCases: 0, judgedCases: 0, onHoldCases: 0 };
+            const rawStats = resultStr ? JSON.parse(resultStr) : { pendingCases: 0, completedCases: 0, scheduledHearings: 0, judgmentsIssued: 0 };
+
+            const allJudgeCasesResult = await judgeContract.evaluateTransaction('GetAllCases');
+            const allJudgeCasesStr = allJudgeCasesResult.toString();
+            const allJudgeCases = allJudgeCasesStr ? JSON.parse(allJudgeCasesStr) : [];
+            const activeCasesCount = (allJudgeCases || []).filter(c =>
+                c.status === 'RECEIVED_BY_JUDGE' || c.status === 'PENDING_JUDGE_REVIEW'
+            ).length;
+
+            // 2. Count pending cases from benchclerk namespace
+            const { contract: bcContract, gateway: bGateway } = await connectToNetwork(
+                benchClerkConfig.org, benchClerkConfig.user,
+                judgeConfig.channelName, benchClerkConfig.chaincodeName
+            );
+            bcGateway = bGateway;
+
+            const bcResult = await bcContract.evaluateTransaction('GetAllCases');
+            const bcResultStr = bcResult.toString();
+            const bcCases = bcResultStr ? JSON.parse(bcResultStr) : [];
+            const pendingCasesCount = (bcCases || []).filter(c =>
+                c.status === 'PENDING_JUDGE_REVIEW' ||
+                c.status === 'FORWARDED_TO_JUDGE' ||
+                (c.currentOrg === 'JudgesOrg' && !['JUDGMENT_ISSUED', 'RECEIVED_BY_JUDGE', 'DECISION_CONFIRMED'].includes(c.status))
+            ).length;
+
+            const stats = {
+                totalCases: pendingCasesCount + activeCasesCount + (rawStats.judgmentsIssued || rawStats.completedCases || 0),
+                pendingCases: pendingCasesCount,
+                activeCases: activeCasesCount,
+                judgedCases: rawStats.judgmentsIssued || rawStats.completedCases || 0
+            };
+
             return res.status(200).json({ success: true, data: stats });
         } catch (error) {
             logger.error(`Error getting stats: ${error.message}`);
-            // Return default empty stats instead of 500
             return res.status(200).json({
                 success: true,
                 data: {
                     totalCases: 0,
                     pendingCases: 0,
                     activeCases: 0,
-                    judgedCases: 0,
-                    onHoldCases: 0
+                    judgedCases: 0
                 },
                 message: 'Stats unavailable, returning defaults'
             });
         } finally {
-            await disconnectFromNetwork(gateway);
+            if (judgeGateway) await disconnectFromNetwork(judgeGateway);
+            if (bcGateway) await disconnectFromNetwork(bcGateway);
         }
     }
 };

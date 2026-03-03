@@ -120,6 +120,7 @@ async def signup(
         data.update({
             "reporterId": reporterId,
             "reportingArea": reportingArea,
+            "department": department,
             "certificationDate": certificationDate,
             "digital_sign": str(uuid.uuid1()),
         })
@@ -346,6 +347,7 @@ async def get_profile(userid: str):
                 profile.update({
                     "reporterId": user.get("reporterId", ""),
                     "reportingArea": user.get("reportingArea", ""),
+                    "department": user.get("department", ""),
                     "certificationDate": user.get("certificationDate", ""),
                     "digital_sign": user.get("digital_sign", ""),
                 })
@@ -358,6 +360,94 @@ async def get_profile(userid: str):
         print(f"Error in get_profile: {e}")
         raise HTTPException(status_code=400, detail=f"Error fetching profile: {str(e)}")
 
+@app.put("/update-profile/{userid}")
+async def update_profile(userid: str, request: Request):
+    try:
+        body = await request.json()
+        print(f"Update profile for {userid}: {body}")
+        
+        # Build update dict - only include fields that are provided
+        update_fields = {}
+        
+        # Common fields
+        if "username" in body:
+            update_fields["username"] = body["username"]
+        if "name" in body:
+            update_fields["username"] = body["name"]
+        if "phone_number" in body:
+            update_fields["phone_number"] = body["phone_number"]
+        if "phone" in body:
+            update_fields["phone_number"] = body["phone"]
+        if "address" in body:
+            update_fields["address"] = body["address"]
+        if "bio" in body:
+            update_fields["bio"] = body["bio"]
+        
+        # Role-specific fields
+        # Stamp Reporter
+        if "reportingArea" in body:
+            update_fields["reportingArea"] = body["reportingArea"]
+        if "reporterId" in body:
+            update_fields["reporterId"] = body["reporterId"]
+        if "certificationDate" in body:
+            update_fields["certificationDate"] = body["certificationDate"]
+        
+        # Lawyer
+        if "barCouncilNumber" in body:
+            update_fields["barCouncilNumber"] = body["barCouncilNumber"]
+        if "practicingAreas" in body:
+            update_fields["practicingAreas"] = body["practicingAreas"]
+        if "experienceYears" in body:
+            update_fields["experienceYears"] = body["experienceYears"]
+        
+        # Judge
+        if "courtAssigned" in body:
+            update_fields["courtAssigned"] = body["courtAssigned"]
+        if "judgementExpertise" in body:
+            update_fields["judgementExpertise"] = body["judgementExpertise"]
+        if "appointmentDate" in body:
+            update_fields["appointmentDate"] = body["appointmentDate"]
+        
+        # Bench Clerk
+        if "courtSection" in body:
+            update_fields["courtSection"] = body["courtSection"]
+        if "clerkId" in body:
+            update_fields["clerkId"] = body["clerkId"]
+        if "joiningDate" in body:
+            update_fields["joiningDate"] = body["joiningDate"]
+        
+        # Registrar
+        if "registrarId" in body:
+            update_fields["registrarId"] = body["registrarId"]
+        if "department" in body:
+            update_fields["department"] = body["department"]
+        if "designation" in body:
+            update_fields["designation"] = body["designation"]
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        # Update in users_collection (primary source)
+        result = users_collection.update_one(
+            {"_id": ObjectId(userid)},
+            {"$set": update_fields}
+        )
+        
+        # Also update in profile_collection if it exists
+        profile_collection.update_one(
+            {"userId": userid},
+            {"$set": update_fields},
+            upsert=False
+        )
+        
+        print(f"Updated {result.modified_count} document(s) in users_collection")
+        
+        return {"success": True, "message": "Profile updated successfully", "modified": result.modified_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in update_profile: {e}")
+        raise HTTPException(status_code=400, detail=f"Error updating profile: {str(e)}")
 
 
 @app.get("/get-cases/{user_id}")
@@ -575,26 +665,26 @@ async def assign_case_to_stampreporter(request: Request):
                 "already_assigned": True
             }
         
-        # Get all stamp reporters - use case-insensitive regex for user_type
-        stampreporters = list(users_collection.find({
-            "user_type": {"$regex": "^stampreporter$", "$options": "i"}
-        }))
+        # Get all stamp reporters - AND filter by the requested department EXACTLY
+        query = {"user_type": {"$regex": "^stampreporter$", "$options": "i"}}
         
-        print(f"DEBUG: Found {len(stampreporters)} stamp reporters")
+        # In DB, stamp reporters have a "department" field for case matching
+        if department:
+            query["department"] = department
+            
+        stampreporters = list(users_collection.find(query))
+        
+        print(f"DEBUG: Found {len(stampreporters)} stamp reporters for department {department}")
         
         if not stampreporters:
-            raise HTTPException(status_code=404, detail="No stamp reporters available in the system. Please ensure at least one stamp reporter account exists.")
+            raise HTTPException(status_code=404, detail=f"No users present in '{department}' department. Please try again later when an official from this department is available.")
         
         # Queue-based allocation: Find stamp reporter with least cases
         reporter_case_counts = []
         for rep in stampreporters:
             case_count = len(rep.get("cases", []))
-            reporter_case_counts.append({
-                "reporter": rep,
-                "case_count": case_count
-            })
+            reporter_case_counts.append({"reporter": rep, "case_count": case_count})
         
-        # Sort by case count (ascending) and pick the one with least cases
         reporter_case_counts.sort(key=lambda x: x["case_count"])
         assigned_reporter = reporter_case_counts[0]["reporter"]
         reporter_id = assigned_reporter["_id"]

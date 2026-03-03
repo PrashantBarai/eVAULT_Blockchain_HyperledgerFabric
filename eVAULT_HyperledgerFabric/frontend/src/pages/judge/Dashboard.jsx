@@ -6,7 +6,7 @@ import {
 import {
   Gavel as GavelIcon, PendingActions as PendingIcon,
   CheckCircle as CheckCircleIcon, Assignment as AssignmentIcon,
-  ArrowForward as ArrowForwardIcon,
+  ArrowForward as ArrowForwardIcon, VerifiedUser as VerifiedUserIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { getUserData } from '../../utils/auth';
@@ -36,8 +36,10 @@ const QuickActionCard = ({ title, description, icon, onClick }) => (
         {description}
       </Typography>
       <Button endIcon={<ArrowForwardIcon />}
-        sx={{ background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)', color: 'white',
-          '&:hover': { background: 'linear-gradient(45deg, #0d47a1 30%, #1a237e 90%)' } }}>
+        sx={{
+          background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)', color: 'white',
+          '&:hover': { background: 'linear-gradient(45deg, #0d47a1 30%, #1a237e 90%)' }
+        }}>
         Take Action
       </Button>
     </CardContent>
@@ -110,15 +112,20 @@ const Dashboard = () => {
       <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>Quick Actions</Typography>
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={4}>
           <QuickActionCard title="Review New Cases"
             description="Accept and review pending cases forwarded by the Bench Clerk."
             icon={<AssignmentIcon />} onClick={() => navigate('/judge/case-review')} />
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={4}>
           <QuickActionCard title="Case Status & Judgments"
             description="View active cases, record judgments, and track decided cases."
             icon={<PendingIcon />} onClick={() => navigate('/judge/case-status')} />
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <QuickActionCard title="View Judged Cases"
+            description="Browse all judged cases with full evidence, documents, and judgment details."
+            icon={<VerifiedUserIcon />} onClick={() => navigate('/judge/judged-cases')} />
         </Grid>
       </Grid>
     </Box>

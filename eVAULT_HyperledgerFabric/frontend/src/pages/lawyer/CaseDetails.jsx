@@ -14,15 +14,23 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  TextField,
+  CircularProgress,
+  Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  IconButton,
 } from '@mui/material';
-import {
-  Timeline,
-  TimelineItem,
-  TimelineSeparator,
-  TimelineConnector,
-  TimelineContent,
-  TimelineDot,
-} from '@mui/lab';
+import DeleteIcon from '@mui/icons-material/Delete';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import ReplayIcon from '@mui/icons-material/Replay';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { useParams } from 'react-router-dom';
 import DescriptionIcon from '@mui/icons-material/Description';
 import PersonIcon from '@mui/icons-material/Person';
@@ -39,6 +47,19 @@ const CaseDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
+  const [openFollowUpDialog, setOpenFollowUpDialog] = useState(false);
+  const [followUpReason, setFollowUpReason] = useState('');
+  const [followUpType, setFollowUpType] = useState('');
+  const [followUpDescription, setFollowUpDescription] = useState('');
+  const [followUpPartyDetails, setFollowUpPartyDetails] = useState('');
+  const [followUpFiles, setFollowUpFiles] = useState([]);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const [followUpError, setFollowUpError] = useState('');
+
+  // New state for local follow-up data before submission
+  const [pendingFollowUp, setPendingFollowUp] = useState(null);
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
+
   console.log(id);
 
   useEffect(() => {
@@ -69,7 +90,7 @@ const CaseDetails = () => {
     setOpenDialog(false);
   };
 
-  // Handle sending the case to the registrar
+  // Handle sending the case to the registrar (initial OR follow-up)
   const handleSendToRegistrar = async () => {
     try {
       const user = getUserData();
@@ -78,64 +99,122 @@ const CaseDetails = () => {
         throw new Error('Authentication required');
       }
 
-      // Step 1: FIRST commit to blockchain (source of truth)
-      // Blockchain must succeed before any MongoDB writes
-      const blockchainResponse = await axios.post(
-        'http://localhost:8000/api/lawyer/case/submit',
-        { caseID: id },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (!blockchainResponse.data.success) {
-        throw new Error(blockchainResponse.data.message || 'Failed to submit case on blockchain');
-      }
-
-      console.log('Blockchain submit successful:', blockchainResponse.data);
-
-      // Step 2: ONLY after blockchain success, assign case to registrar in MongoDB
-      let assignedRegistrarName = 'Registrar';
-      try {
-        const assignResponse = await axios.post(
-          'http://localhost:3000/assign-case-to-registrar',
+      if (pendingFollowUp) {
+        // --- FOLLOW-UP SUBMISSION FLOW ---
+        const response = await axios.post(
+          'http://localhost:8000/api/lawyer/case/follow-up',
           {
             caseID: id,
-            caseSubject: caseData.caseSubject || caseData.title || caseData.case_subject,
-            lawyerEmail: user.email
+            reason: pendingFollowUp.fullReason,
+            documents: pendingFollowUp.documentsMeta
           },
-          {
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
+          { headers: { 'Content-Type': 'application/json' } }
         );
 
-        if (assignResponse.data.success) {
-          assignedRegistrarName = assignResponse.data.assigned_registrar_name || 'Registrar';
-          console.log('Case assigned to registrar in MongoDB:', assignResponse.data);
+        if (!response.data.success) {
+          throw new Error(response.data.message || 'Follow-up submission failed');
         }
-      } catch (assignErr) {
-        // MongoDB assignment failed but blockchain already committed - log but don't fail
-        console.warn('MongoDB registrar assignment failed (non-critical):', assignErr.message);
-        // Blockchain is source of truth - case IS submitted regardless of MongoDB
-      }
 
-      alert(`Case successfully submitted to ${assignedRegistrarName} for registrar review.`);
-      // Update the case data to reflect the new status
-      setCaseData(prev => ({
-        ...prev,
-        status: 'PENDING_REGISTRAR_REVIEW',
-        currentOrg: 'RegistrarsOrg'
-      }));
+        alert('Follow-up submitted successfully! The case has been routed back to the Registrar.');
+        setCaseData(prev => ({
+          ...prev,
+          status: 'FOLLOW_UP_SUBMITTED',
+          currentOrg: 'RegistrarsOrg'
+        }));
+        setPendingFollowUp(null); // Clear pending state
+      } else {
+        // --- INITIAL SUBMISSION FLOW ---
+        // Step 1: FIRST commit to blockchain (source of truth)
+        const blockchainResponse = await axios.post(
+          'http://localhost:8000/api/lawyer/case/submit',
+          { caseID: id },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        if (!blockchainResponse.data.success) {
+          throw new Error(blockchainResponse.data.message || 'Failed to submit case on blockchain');
+        }
+
+        console.log('Blockchain submit successful:', blockchainResponse.data);
+
+        // Step 2: ONLY after blockchain success, assign case to registrar in MongoDB
+        let assignedRegistrarName = 'Registrar';
+        try {
+          const assignResponse = await axios.post(
+            'http://localhost:3000/assign-case-to-registrar',
+            {
+              caseID: id,
+              caseSubject: caseData.caseSubject || caseData.title || caseData.case_subject,
+              lawyerEmail: user.email
+            },
+            { headers: { 'Content-Type': 'application/json' } }
+          );
+
+          if (assignResponse.data.success) {
+            assignedRegistrarName = assignResponse.data.assigned_registrar_name || 'Registrar';
+            console.log('Case assigned to registrar in MongoDB:', assignResponse.data);
+          }
+        } catch (assignErr) {
+          console.warn('MongoDB registrar assignment failed (non-critical):', assignErr.message);
+        }
+
+        alert(`Case successfully submitted to ${assignedRegistrarName} for registrar review.`);
+        setCaseData(prev => ({
+          ...prev,
+          status: 'PENDING_REGISTRAR_REVIEW',
+          currentOrg: 'RegistrarsOrg'
+        }));
+      }
     } catch (err) {
       console.error('Error sending case to registrar:', err);
       alert(err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to send case to registrar. Please try again.');
     } finally {
       handleCloseDialog();
     }
+  };
+
+  // Follow-up button only activates when a judge decision exists on the case
+  const hasJudgeDecision = caseData && caseData.judgment && caseData.judgment.decision;
+
+  // Handle follow-up format locally (don't submit yet)
+  const handleFollowUpSubmit = () => {
+    if (!followUpReason.trim()) {
+      setFollowUpError('Please provide a reason for follow-up.');
+      return;
+    }
+    if (!followUpType) {
+      setFollowUpError('Please select a follow-up type.');
+      return;
+    }
+
+    // Build document metadata from files for local display
+    const documentsMeta = followUpFiles.map((file, idx) => ({
+      id: `FOLLOWUP_DOC_${Date.now()}_${idx}`,
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      hash: '',
+      validated: false,
+      uploadedAt: new Date().toISOString(),
+      fileObject: file // keep the file object for later pinning if needed
+    }));
+
+    const fullReason = [
+      `[${followUpType}]`,
+      followUpReason,
+      followUpPartyDetails ? `Party Details: ${followUpPartyDetails}` : '',
+      followUpDescription ? `Updated Description: ${followUpDescription}` : '',
+    ].filter(Boolean).join(' | ');
+
+    // Save locally
+    setPendingFollowUp({
+      fullReason,
+      documentsMeta,
+      displayReason: followUpReason,
+      displayType: followUpType
+    });
+
+    setOpenFollowUpDialog(false);
+    // Note: Don't clear the form fields yet so user can edit if they want to cancel and redo
   };
 
   if (loading) {
@@ -385,21 +464,64 @@ const CaseDetails = () => {
             )}
           </Grid>
 
+          {/* Dynamic Follow-Up Summary Section */}
+          {pendingFollowUp && (
+            <Grid item xs={12} sx={{ mt: 2 }}>
+              <Card sx={{ borderRadius: 2, bgcolor: '#fff3e0', border: '1px solid #ffcc80' }}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="h6" color="#e65100">
+                      <ReplayIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                      Pending Follow-Up (Not Submitted Yet)
+                    </Typography>
+                    <IconButton size="small" onClick={() => setPendingFollowUp(null)} title="Cancel Follow-Up">
+                      <DeleteIcon color="error" />
+                    </IconButton>
+                  </Box>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    <strong>Type:</strong> {pendingFollowUp.displayType?.replace(/_/g, ' ')}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    <strong>Reason:</strong> {pendingFollowUp.displayReason}
+                  </Typography>
+                  {pendingFollowUp.documentsMeta?.length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="subtitle2">New Documents to Upload:</Typography>
+                      <List dense>
+                        {pendingFollowUp.documentsMeta.map((doc, idx) => (
+                          <ListItem key={idx} sx={{ p: 0 }}>
+                            <ListItemIcon sx={{ minWidth: 28 }}><DescriptionIcon fontSize="small" color="primary" /></ListItemIcon>
+                            <ListItemText primary={doc.name} />
+                          </ListItem>
+                        ))}
+                      </List>
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          )}
+
           {/* "Send to Registrar" Button */}
           <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+            {/* The main action button handles both initial submission and follow-up submission */}
             <Button
               variant="contained"
               onClick={handleOpenDialog}
-              disabled={caseData.status !== 'CREATED' || caseData.currentOrg !== 'LawyersOrg'}
+              disabled={!((caseData.status === 'CREATED' && caseData.currentOrg === 'LawyersOrg') || pendingFollowUp)}
               sx={{
-                background: caseData.status === 'CREATED' && caseData.currentOrg === 'LawyersOrg'
-                  ? 'linear-gradient(45deg, #6B5ECD 30%, #8B7CF7 90%)'
-                  : '#9e9e9e',
+                background: pendingFollowUp
+                  ? 'linear-gradient(45deg, #FF6B35 30%, #FF8E53 90%)' // Orange for follow-up submit
+                  : caseData.status === 'CREATED' && caseData.currentOrg === 'LawyersOrg'
+                    ? 'linear-gradient(45deg, #6B5ECD 30%, #8B7CF7 90%)' // Purple for initial submit
+                    : '#9e9e9e',
                 color: 'white',
                 '&:hover': {
-                  background: caseData.status === 'CREATED' && caseData.currentOrg === 'LawyersOrg'
-                    ? 'linear-gradient(45deg, #5A4CAD 30%, #7B6CE7 90%)'
-                    : '#9e9e9e',
+                  background: pendingFollowUp
+                    ? 'linear-gradient(45deg, #E55A2B 30%, #E57D43 90%)'
+                    : caseData.status === 'CREATED' && caseData.currentOrg === 'LawyersOrg'
+                      ? 'linear-gradient(45deg, #5A4CAD 30%, #7B6CE7 90%)'
+                      : '#9e9e9e',
                 },
                 '&.Mui-disabled': {
                   color: 'white',
@@ -407,10 +529,32 @@ const CaseDetails = () => {
                 },
               }}
             >
-              {caseData.status === 'CREATED' && caseData.currentOrg === 'LawyersOrg'
-                ? 'Send to Registrar'
-                : 'Already Forwarded'}
+              {pendingFollowUp
+                ? 'Submit Follow-Up to Registrar'
+                : caseData.status === 'CREATED' && caseData.currentOrg === 'LawyersOrg'
+                  ? 'Send to Registrar'
+                  : 'Already Forwarded'}
             </Button>
+
+            {/* Follow Up button just opens the dialog to prepare locally */}
+            {hasJudgeDecision && !pendingFollowUp && (
+              <Button
+                variant="outlined"
+                startIcon={<ReplayIcon />}
+                onClick={() => setOpenFollowUpDialog(true)}
+                sx={{
+                  ml: 2,
+                  borderColor: '#FF6B35',
+                  color: '#FF6B35',
+                  '&:hover': {
+                    borderColor: '#E55A2B',
+                    bgcolor: 'rgba(255, 107, 53, 0.04)',
+                  },
+                }}
+              >
+                Prepare Follow-Up
+              </Button>
+            )}
           </Box>
         </CardContent>
       </Card>
@@ -434,6 +578,185 @@ const CaseDetails = () => {
           </Button>
           <Button onClick={handleSendToRegistrar} color="primary" autoFocus>
             Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Follow Up Dialog */}
+      <Dialog
+        open={openFollowUpDialog}
+        onClose={() => !followUpLoading && setOpenFollowUpDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ background: 'linear-gradient(45deg, #FF6B35 30%, #FF8E53 90%)', color: 'white' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ReplayIcon />
+            Case Follow-Up Submission
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          {followUpError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {followUpError}
+            </Alert>
+          )}
+
+          {/* Show previous judgment reference */}
+          {caseData?.judgment && (
+            <Alert severity="info" sx={{ mb: 3 }}>
+              <Typography variant="subtitle2">Previous Judgment:</Typography>
+              <Typography variant="body2">
+                <strong>Decision:</strong> {caseData.judgment.decision?.replace(/_/g, ' ')}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Reasoning:</strong> {caseData.judgment.reasoning}
+              </Typography>
+              {caseData.judgment.issuedAt && (
+                <Typography variant="caption">Issued: {formatDate(caseData.judgment.issuedAt)}</Typography>
+              )}
+            </Alert>
+          )}
+
+          <Grid container spacing={2}>
+            {/* Follow-Up Type */}
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Follow-Up Type</InputLabel>
+                <Select
+                  value={followUpType}
+                  label="Follow-Up Type"
+                  onChange={(e) => setFollowUpType(e.target.value)}
+                  disabled={followUpLoading}
+                >
+                  <MenuItem value="APPEAL">Appeal</MenuItem>
+                  <MenuItem value="REVIEW_PETITION">Review Petition</MenuItem>
+                  <MenuItem value="NEW_EVIDENCE">New Evidence Submission</MenuItem>
+                  <MenuItem value="CLARIFICATION">Clarification Request</MenuItem>
+                  <MenuItem value="MODIFICATION">Order Modification</MenuItem>
+                  <MenuItem value="COMPLIANCE_REPORT">Compliance Report</MenuItem>
+                  <MenuItem value="OTHER">Other</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Reason */}
+            <Grid item xs={12}>
+              <TextField
+                required
+                label="Reason for Follow-Up"
+                fullWidth
+                multiline
+                rows={3}
+                value={followUpReason}
+                onChange={(e) => setFollowUpReason(e.target.value)}
+                disabled={followUpLoading}
+                placeholder="Provide a detailed reason for this follow-up..."
+              />
+            </Grid>
+
+            {/* Updated Case Description */}
+            <Grid item xs={12}>
+              <TextField
+                label="Updated Case Description (if applicable)"
+                fullWidth
+                multiline
+                rows={3}
+                value={followUpDescription}
+                onChange={(e) => setFollowUpDescription(e.target.value)}
+                disabled={followUpLoading}
+                placeholder="Update the case description with new facts or circumstances..."
+              />
+            </Grid>
+
+            {/* Party Details */}
+            <Grid item xs={12}>
+              <TextField
+                label="Party Details / Additional Parties"
+                fullWidth
+                multiline
+                rows={2}
+                value={followUpPartyDetails}
+                onChange={(e) => setFollowUpPartyDetails(e.target.value)}
+                disabled={followUpLoading}
+                placeholder="Any changes to involved parties, new witnesses, etc."
+              />
+            </Grid>
+
+            {/* File Upload */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>New Evidence / Documents</Typography>
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<CloudUploadIcon />}
+                disabled={followUpLoading}
+                fullWidth
+                sx={{ py: 1.5, borderStyle: 'dashed' }}
+              >
+                Click to Upload Files
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  onChange={(e) => setFollowUpFiles(prev => [...prev, ...Array.from(e.target.files)])}
+                />
+              </Button>
+              {followUpFiles.length > 0 && (
+                <List dense sx={{ mt: 1 }}>
+                  {followUpFiles.map((file, idx) => (
+                    <ListItem
+                      key={idx}
+                      secondaryAction={
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            color="primary"
+                            onClick={() => {
+                              const url = URL.createObjectURL(file);
+                              window.open(url, '_blank');
+                            }}
+                          >
+                            <VisibilityIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            onClick={() => setFollowUpFiles(prev => prev.filter((_, i) => i !== idx))}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      }
+                    >
+                      <ListItemIcon><DescriptionIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText
+                        primary={file.name}
+                        secondary={`${(file.size / 1024).toFixed(1)} KB`}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setOpenFollowUpDialog(false)} disabled={followUpLoading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleFollowUpSubmit}
+            variant="contained"
+            disabled={!followUpReason.trim() || !followUpType || followUpLoading}
+            endIcon={followUpLoading && <CircularProgress size={20} />}
+            sx={{
+              background: 'linear-gradient(45deg, #FF6B35 30%, #FF8E53 90%)',
+              color: 'white',
+            }}
+          >
+            {followUpLoading ? 'Submitting...' : 'Submit Follow-Up'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -490,23 +813,52 @@ const CaseDetails = () => {
                 Case Timeline
               </Typography>
               <Divider sx={{ mb: 2 }} />
-              <Timeline>
-                {formattedCaseData.timeline.map((item, index) => (
-                  <TimelineItem key={index}>
-                    <TimelineSeparator>
-                      <TimelineDot color="primary" />
-                      {index < formattedCaseData.timeline.length - 1 && <TimelineConnector />}
-                    </TimelineSeparator>
-                    <TimelineContent>
-                      <Typography variant="subtitle2">{item.event}</Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        {item.date}
-                      </Typography>
-                      <Typography variant="body2">{item.description}</Typography>
-                    </TimelineContent>
-                  </TimelineItem>
-                ))}
-              </Timeline>
+
+              <List dense sx={{ width: '100%', bgcolor: 'background.paper' }}>
+                {formattedCaseData.timeline
+                  .slice(0, timelineExpanded ? undefined : 4) // Show 4 items max when collapsed
+                  .map((item, index) => (
+                    <ListItem
+                      key={index}
+                      alignItems="flex-start"
+                      sx={{
+                        mb: 1,
+                        borderLeft: '3px solid #6B5ECD',
+                        bgcolor: '#f9f9f9',
+                        borderRadius: '0 4px 4px 0'
+                      }}
+                    >
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {item.event}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {item.date}
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {item.description}
+                          </Typography>
+                        }
+                      />
+                    </ListItem>
+                  ))}
+              </List>
+
+              {formattedCaseData.timeline.length > 4 && (
+                <Button
+                  size="small"
+                  fullWidth
+                  onClick={() => setTimelineExpanded(!timelineExpanded)}
+                  sx={{ mt: 1, color: '#6B5ECD' }}
+                >
+                  {timelineExpanded ? 'Show Less' : `Show All (${formattedCaseData.timeline.length})`}
+                </Button>
+              )}
             </CardContent>
           </Card>
         </Grid>

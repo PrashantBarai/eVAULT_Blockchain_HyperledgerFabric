@@ -167,7 +167,7 @@ const Dashboard = () => {
               <Person sx={{ fontSize: 40 }} />
             </Avatar>
             <Box>
-              <Typography variant="h4">Welcome, Registrar {user.username}</Typography>
+              <Typography variant="h4">Welcome, Registrar {user?.username || user?.name || ''}</Typography>
               {/* <Typography variant="subtitle1">{} | {registrar.court}</Typography> */}
             </Box>
             <Button

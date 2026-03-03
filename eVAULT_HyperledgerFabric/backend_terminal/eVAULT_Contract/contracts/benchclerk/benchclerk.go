@@ -568,7 +568,7 @@ func (bc *BenchClerkContract) QueryStats(ctx contractapi.TransactionContextInter
 	}{}
 
 	// Count pending cases
-	pendingIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"VALIDATED_BY_STAMP_REPORTER","currentOrg":"BenchClerksOrg"}}`)
+	pendingIterator, err := ctx.GetStub().GetQueryResult(`{"selector":{"status":"PENDING_BENCHCLERK_REVIEW","currentOrg":"BenchClerksOrg"}}`)
 	if err == nil {
 		for pendingIterator.HasNext() {
 			stats.PendingCases++

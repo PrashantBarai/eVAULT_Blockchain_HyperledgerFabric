@@ -50,6 +50,7 @@ import JudgeCaseReview from './pages/judge/CaseReview';
 import JudgeCaseStatus from './pages/judge/CaseStatus';
 import JudgeNotifications from './pages/judge/Notifications';
 import JudgeProfile from './pages/judge/Profile';
+import JudgeJudgedCases from './pages/judge/JudgedCases';
 // import JudgeLogin from './pages/judge/Login';
 
 import MainLayout from './layouts/MainLayout';
@@ -61,8 +62,8 @@ function App() {
       <BrowserRouter>
         <Routes>
           {/* Lawyer Routes */}
-          <Route path="/signup" element={<Signup/>} />
-          <Route path="/login" element={<Login/>} /> 
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/login" element={<Login />} />
           {/* <Route path="/lawyer/login" element={<LawyerLogin />} /> */}
           <Route path="/lawyer" element={<MainLayout />}>
             <Route path="dashboard" element={<LawyerDashboard />} />
@@ -113,6 +114,7 @@ function App() {
             <Route path="dashboard" element={<JudgeDashboard />} />
             <Route path="case-review" element={<JudgeCaseReview />} />
             <Route path="case-status" element={<JudgeCaseStatus />} />
+            <Route path="judged-cases" element={<JudgeJudgedCases />} />
             <Route path="notifications" element={<JudgeNotifications />} />
             <Route path="profile" element={<JudgeProfile />} />
           </Route>

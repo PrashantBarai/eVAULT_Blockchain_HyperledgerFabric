@@ -48,33 +48,33 @@ const Signup = () => {
     confirmPassword: '',
     phone_number: '',
     address: '',
-    
+
     // Lawyer-specific fields
     barCouncilNumber: '',
     practicingAreas: '',
     experienceYears: '',
-    
+
     // Judge-specific fields
     courtAssigned: '',
     judgementExpertise: '',
     appointmentDate: '',
-    
+
     // Bench Clerk-specific fields
     courtSection: '',
     clerkId: '',
     joiningDate: '',
-    
+
     // Registrar-specific fields
     registrarId: '',
     department: '',
     designation: '',
-    
+
     // Stamp Reporter-specific fields
     reporterId: '',
     reportingArea: '',
     certificationDate: '',
   });
-  
+
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [documents, setDocuments] = useState([]);
@@ -84,7 +84,7 @@ const Signup = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    
+
     // Clear error when field is edited
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
@@ -102,7 +102,7 @@ const Signup = () => {
 
   const validateStep = (step) => {
     const newErrors = {};
-    
+
     if (step === 0) {
       if (!user_type) newErrors.user_type = 'Please select a role';
     } else if (step === 1) {
@@ -130,12 +130,13 @@ const Signup = () => {
         if (!formData.department) newErrors.department = 'Department is required';
       } else if (user_type === 'stampreporter') {
         if (!formData.reporterId) newErrors.reporterId = 'Reporter ID is required';
-        if (!formData.reportingArea) newErrors.reportingArea = 'Reporting area is required';
+        if (!formData.reportingArea) newErrors.reportingArea = 'Court is required';
+        if (!formData.department) newErrors.department = 'Department is required';
       }
     } else if (step === 3) {
       if (documents.length === 0) newErrors.documents = 'Please upload at least one document';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -148,22 +149,22 @@ const Signup = () => {
         email: formData.email,
         licenseId: formData.licenseId,
       });
-      
+
       const { emailExists, licenseIdExists } = response.data;
       const newErrors = {};
-      
+
       if (emailExists) {
         newErrors.email = 'This email is already registered. Please use a different email or login.';
       }
       if (licenseIdExists) {
         newErrors.licenseId = 'This License ID is already registered. Please use a different License ID.';
       }
-      
+
       if (Object.keys(newErrors).length > 0) {
         setErrors(prev => ({ ...prev, ...newErrors }));
         return false;
       }
-      
+
       return true;
     } catch (error) {
       console.error('Error checking duplicate:', error);
@@ -204,23 +205,23 @@ const Signup = () => {
       e.preventDefault();
       e.stopPropagation();
     }
-    
+
     console.log('handleSubmit called, activeStep:', activeStep, 'last step:', steps.length - 1);
-    
+
     // Only process form submission on the last step
     if (activeStep !== steps.length - 1) {
       console.log('Not on last step, preventing submission');
       return false;
     }
-    
+
     console.log('On last step, validating...');
     if (!validateStep(activeStep)) {
       console.log('Validation failed');
       return false;
     }
-    
+
     console.log('Validation passed, submitting to backend...');
-    
+
     // Prepare FormData to send all data including files
     const formPayload = new FormData();
     formPayload.append('user_type', user_type);
@@ -232,58 +233,58 @@ const Signup = () => {
     });
 
     try {
-        const response = await fetch('http://localhost:3000/signup', {
-          method: 'POST',
-          body: formPayload,
-        });
+      const response = await fetch('http://localhost:3000/signup', {
+        method: 'POST',
+        body: formPayload,
+      });
 
-        if (response.ok) {
-          const result = await response.json();
-          console.log('Backend response:', result);
-          setSuccessMessage(`Registration successful! Your ${user_type} account has been created. Redirecting to login...`);
-          
-          // Clear form data
-          setFormData({
-            username: '',
-            email: '',
-            licenseId: '',
-            password: '',
-            confirmPassword: '',
-            phone_number: '',
-            address: '',
-            barCouncilNumber: '',
-            practicingAreas: '',
-            experienceYears: '',
-            courtAssigned: '',
-            judgementExpertise: '',
-            appointmentDate: '',
-            courtSection: '',
-            clerkId: '',
-            joiningDate: '',
-            registrarId: '',
-            department: '',
-            designation: '',
-            reporterId: '',
-            reportingArea: '',
-            certificationDate: '',
-          });
-          setDocuments([]);
-          setRole('');
-          
-          // Navigate to login after 2 seconds
-          setTimeout(() => {
-            console.log('Navigating to login page now');
-            navigate('/login');
-          }, 2000);
-        } else {
-          const errorData = await response.json();
-          console.error('Signup failed:', errorData);
-          alert(`Signup failed: ${errorData.detail || 'Unknown error'}`);
-        }
-      } catch (error) {
-        console.error('Signup error:', error);
-        alert('An error occurred during signup. Please try again.');
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Backend response:', result);
+        setSuccessMessage(`Registration successful! Your ${user_type} account has been created. Redirecting to login...`);
+
+        // Clear form data
+        setFormData({
+          username: '',
+          email: '',
+          licenseId: '',
+          password: '',
+          confirmPassword: '',
+          phone_number: '',
+          address: '',
+          barCouncilNumber: '',
+          practicingAreas: '',
+          experienceYears: '',
+          courtAssigned: '',
+          judgementExpertise: '',
+          appointmentDate: '',
+          courtSection: '',
+          clerkId: '',
+          joiningDate: '',
+          registrarId: '',
+          department: '',
+          designation: '',
+          reporterId: '',
+          reportingArea: '',
+          certificationDate: '',
+        });
+        setDocuments([]);
+        setRole('');
+
+        // Navigate to login after 2 seconds
+        setTimeout(() => {
+          console.log('Navigating to login page now');
+          navigate('/login');
+        }, 2000);
+      } else {
+        const errorData = await response.json();
+        console.error('Signup failed:', errorData);
+        alert(`Signup failed: ${errorData.detail || 'Unknown error'}`);
       }
+    } catch (error) {
+      console.error('Signup error:', error);
+      alert('An error occurred during signup. Please try again.');
+    }
   };
 
   const steps = ['Select Role', 'Basic Information', 'Role-specific Details', 'Document Upload', 'Review & Submit'];
@@ -341,9 +342,9 @@ const Signup = () => {
               error={!!errors.experienceYears}
               helperText={errors.experienceYears}
               sx={textFieldSx}
-              inputProps={{ 
-                min: 0, 
-                step: 1 
+              inputProps={{
+                min: 0,
+                step: 1
               }}
               onKeyDown={(e) => {
                 // Prevent form submission on Enter
@@ -358,7 +359,7 @@ const Signup = () => {
             />
           </>
         );
-      
+
       case 'judge':
         return (
           <>
@@ -403,7 +404,7 @@ const Signup = () => {
             />
           </>
         );
-      
+
       case 'benchclerk':
         return (
           <>
@@ -447,7 +448,7 @@ const Signup = () => {
             />
           </>
         );
-      
+
       case 'registrar':
         return (
           <>
@@ -489,7 +490,7 @@ const Signup = () => {
             />
           </>
         );
-      
+
       case 'stampreporter':
         return (
           <>
@@ -505,18 +506,44 @@ const Signup = () => {
               helperText={errors.reporterId}
               sx={textFieldSx}
             />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              label="Reporting Area"
-              name="reportingArea"
-              value={formData.reportingArea}
-              onChange={handleChange}
-              error={!!errors.reportingArea}
-              helperText={errors.reportingArea}
-              sx={textFieldSx}
-            />
+            <FormControl fullWidth margin="normal" required error={!!errors.reportingArea} sx={textFieldSx}>
+              <InputLabel>Court</InputLabel>
+              <Select
+                name="reportingArea"
+                value={formData.reportingArea}
+                label="Court"
+                onChange={handleChange}
+              >
+                <MenuItem value="Supreme Court">Supreme Court</MenuItem>
+                <MenuItem value="High Court">High Court</MenuItem>
+                <MenuItem value="District Court">District Court</MenuItem>
+                <MenuItem value="Sessions Court">Sessions Court</MenuItem>
+                <MenuItem value="Magistrate Court">Magistrate Court</MenuItem>
+                <MenuItem value="Tribunal">Tribunal</MenuItem>
+              </Select>
+              {errors.reportingArea && <Typography color="error" variant="caption">{errors.reportingArea}</Typography>}
+            </FormControl>
+            <FormControl fullWidth margin="normal" required error={!!errors.department} sx={textFieldSx}>
+              <InputLabel>Department</InputLabel>
+              <Select
+                name="department"
+                value={formData.department}
+                label="Department"
+                onChange={handleChange}
+              >
+                <MenuItem value="Civil">Civil</MenuItem>
+                <MenuItem value="Criminal">Criminal</MenuItem>
+                <MenuItem value="Family">Family</MenuItem>
+                <MenuItem value="Corporate">Corporate</MenuItem>
+                <MenuItem value="Constitutional">Constitutional</MenuItem>
+                <MenuItem value="Revenue">Revenue</MenuItem>
+                <MenuItem value="Labour">Labour</MenuItem>
+                <MenuItem value="Consumer">Consumer</MenuItem>
+                <MenuItem value="Taxation">Taxation</MenuItem>
+                <MenuItem value="Cyber">Cyber</MenuItem>
+              </Select>
+              {errors.department && <Typography color="error" variant="caption">{errors.department}</Typography>}
+            </FormControl>
             <TextField
               margin="normal"
               required
@@ -533,7 +560,7 @@ const Signup = () => {
             />
           </>
         );
-      
+
       default:
         return null;
     }
@@ -554,10 +581,10 @@ const Signup = () => {
     switch (step) {
       case 0:
         return (
-          <FormControl 
-            fullWidth 
-            margin="normal" 
-            required 
+          <FormControl
+            fullWidth
+            margin="normal"
+            required
             error={!!errors.user_type}
             sx={textFieldSx}
           >
@@ -578,7 +605,7 @@ const Signup = () => {
             {errors.role && <Typography color="error" variant="caption">{errors.role}</Typography>}
           </FormControl>
         );
-      
+
       case 1:
         return (
           <>
@@ -681,10 +708,10 @@ const Signup = () => {
             />
           </>
         );
-      
+
       case 2:
         return getRoleSpecificFields();
-      
+
       case 3:
         return (
           <Box sx={{ my: 3 }}>
@@ -694,16 +721,16 @@ const Signup = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {user_type === 'lawyer' && 'Bar Council Certificate, Government ID, Educational Certificates'}
               {user_type === 'judge' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {user_type=== 'benchclerk' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {user_type=== 'registrar' && 'Appointment Letter, Government ID, Educational Certificates'}
-              {user_type=== 'stampreporter' && 'Certification, Government ID, Educational Certificates'}
+              {user_type === 'benchclerk' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type === 'registrar' && 'Appointment Letter, Government ID, Educational Certificates'}
+              {user_type === 'stampreporter' && 'Certification, Government ID, Educational Certificates'}
             </Typography>
-            
+
             <Button
               variant="outlined"
               component="label"
               startIcon={<CloudUploadIcon />}
-              sx={{ 
+              sx={{
                 my: 2,
                 color: '#3f51b5',
                 borderColor: '#3f51b5',
@@ -721,7 +748,7 @@ const Signup = () => {
                 onChange={handleFileChange}
               />
             </Button>
-            
+
             {documents.length > 0 && (
               <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(63, 81, 181, 0.05)', borderRadius: 1 }}>
                 <Typography variant="subtitle2" sx={{ color: '#303f9f', fontWeight: 500 }}>Uploaded Files:</Typography>
@@ -732,7 +759,7 @@ const Signup = () => {
                 ))}
               </Box>
             )}
-            
+
             {errors.documents && (
               <Typography color="error" variant="caption">
                 {errors.documents}
@@ -740,14 +767,14 @@ const Signup = () => {
             )}
           </Box>
         );
-      
+
       case 4:
         return (
           <Box sx={{ my: 3 }}>
             <Typography variant="h6" gutterBottom sx={{ color: '#1a237e', fontWeight: 600 }}>
               Review Your Information
             </Typography>
-            
+
             <Grid container spacing={2} sx={{ mt: 2 }}>
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Role:</Typography>
@@ -755,49 +782,49 @@ const Signup = () => {
                   {user_type.charAt(0).toUpperCase() + user_type.slice(1)}
                 </Typography>
               </Grid>
-              
+
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Full Name:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   {formData.username}
                 </Typography>
               </Grid>
-              
+
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Email:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   {formData.email}
                 </Typography>
               </Grid>
-              
+
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>License ID:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   {formData.licenseId}
                 </Typography>
               </Grid>
-              
+
               <Grid item xs={12} sm={6}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Contact Number:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   {formData.phone_number}
                 </Typography>
               </Grid>
-              
+
               <Grid item xs={12}>
                 <Typography variant="subtitle2" sx={{ color: '#3f51b5' }}>Address:</Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   {formData.address}
                 </Typography>
               </Grid>
-              
+
               <Grid item xs={12}>
                 <Divider sx={{ borderColor: 'rgba(63, 81, 181, 0.2)' }} />
                 <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, color: '#1a237e', fontWeight: 500 }}>
                   Role-specific Information
                 </Typography>
               </Grid>
-              
+
               {user_type === 'lawyer' && (
                 <>
                   <Grid item xs={12} sm={6}>
@@ -820,7 +847,7 @@ const Signup = () => {
                   </Grid>
                 </>
               )}
-              
+
               {user_type === 'judge' && (
                 <>
                   <Grid item xs={12} sm={6}>
@@ -843,9 +870,9 @@ const Signup = () => {
                   </Grid>
                 </>
               )}
-              
+
               {/* Similar sections for other roles */}
-              
+
               <Grid item xs={12}>
                 <Divider sx={{ borderColor: 'rgba(63, 81, 181, 0.2)' }} />
                 <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, color: '#1a237e', fontWeight: 500 }}>
@@ -864,21 +891,21 @@ const Signup = () => {
                 )}
               </Grid>
             </Grid>
-            
+
             <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
               By clicking &apos;Submit&apos;, you confirm that all the information provided is accurate and agree to the terms and conditions of eVAULT.
             </Typography>
           </Box>
         );
-      
+
       default:
         return 'Unknown step';
     }
   };
 
   return (
-    <Box 
-      sx={{ 
+    <Box
+      sx={{
         display: 'flex',
         minHeight: '100vh',
         width: '100%',
@@ -891,8 +918,8 @@ const Signup = () => {
         left: 0,
       }}
     >
-      <Container 
-        component="main" 
+      <Container
+        component="main"
         maxWidth="md"
         sx={{
           display: 'flex',
@@ -915,10 +942,10 @@ const Signup = () => {
             border: '1px solid rgba(255, 255, 255, 0.18)',
           }}
         >
-          <Avatar 
-            sx={{ 
-              m: 1, 
-              width: 56, 
+          <Avatar
+            sx={{
+              m: 1,
+              width: 56,
               height: 56,
               bgcolor: '#3f51b5',
               boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
@@ -926,12 +953,12 @@ const Signup = () => {
           >
             <PersonAddIcon fontSize="large" />
           </Avatar>
-          
-          <Typography 
-            component="h1" 
-            variant={isMobile ? "h5" : "h4"} 
-            sx={{ 
-              mb: 3, 
+
+          <Typography
+            component="h1"
+            variant={isMobile ? "h5" : "h4"}
+            sx={{
+              mb: 3,
               fontWeight: 600,
               color: '#1a237e',
               textAlign: 'center'
@@ -939,31 +966,31 @@ const Signup = () => {
           >
             Register for eVAULT
           </Typography>
-          
+
           {successMessage && (
-            <Alert 
-              severity="success" 
-              sx={{ 
-                width: '100%', 
+            <Alert
+              severity="success"
+              sx={{
+                width: '100%',
                 mb: 3,
-                borderRadius: 1 
+                borderRadius: 1
               }}
             >
               {successMessage}
             </Alert>
           )}
-          
-          <Stepper 
-            activeStep={activeStep} 
-            alternativeLabel 
-            sx={{ 
-              width: '100%', 
+
+          <Stepper
+            activeStep={activeStep}
+            alternativeLabel
+            sx={{
+              width: '100%',
               mb: 4,
               '& .MuiStepLabel-root .Mui-completed': {
-                color: '#3f51b5', 
+                color: '#3f51b5',
               },
               '& .MuiStepLabel-root .Mui-active': {
-                color: '#3f51b5', 
+                color: '#3f51b5',
               },
             }}
           >
@@ -973,19 +1000,19 @@ const Signup = () => {
               </Step>
             ))}
           </Stepper>
-          
-          <Box 
-            component="form" 
+
+          <Box
+            component="form"
             noValidate
-            sx={{ 
-              mt: 1, 
-              width: '100%' 
-            }} 
+            sx={{
+              mt: 1,
+              width: '100%'
+            }}
             onSubmit={(e) => e.preventDefault()}
             onKeyDown={handleKeyDown}
           >
             {getStepContent(activeStep)}
-            
+
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
               <Button
                 type="button"
@@ -1000,7 +1027,7 @@ const Signup = () => {
               >
                 Back
               </Button>
-              
+
               {activeStep === steps.length - 1 ? (
                 <Button
                   type="button"
@@ -1052,11 +1079,11 @@ const Signup = () => {
               )}
             </Box>
           </Box>
-          
+
           <Box sx={{ mt: 3, textAlign: 'center' }}>
-            <Typography 
-              variant="body2" 
-              sx={{ 
+            <Typography
+              variant="body2"
+              sx={{
                 color: 'text.secondary',
                 '& a': {
                   color: '#3f51b5',

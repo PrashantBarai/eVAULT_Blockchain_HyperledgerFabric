@@ -27,6 +27,8 @@ import {
   Image,
   VideoLibrary,
   Description,
+  History as HistoryIcon,
+  Fingerprint as FingerprintIcon,
 } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserData, getAuthToken } from '../../utils/auth';
@@ -73,6 +75,8 @@ const CaseVerification = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [userDigitalSign, setUserDigitalSign] = useState('');
+  const [openHistoryDialog, setOpenHistoryDialog] = useState(false);
 
   useEffect(() => {
     const fetchCaseDetails = async () => {
@@ -119,6 +123,23 @@ const CaseVerification = () => {
     };
 
     fetchCaseDetails();
+
+    // Auto-fetch the logged-in user's digital signature
+    const fetchUserSignature = async () => {
+      try {
+        const user = getUserData();
+        if (!user?._id) return;
+        const profileRes = await fetch(`http://localhost:3000/get-profile/${user._id}`);
+        const profileData = await profileRes.json();
+        if (profileData.success && profileData.profile?.digital_sign) {
+          setUserDigitalSign(profileData.profile.digital_sign);
+          setDigitalSignature(profileData.profile.digital_sign);
+        }
+      } catch (err) {
+        console.error('Failed to fetch digital signature:', err);
+      }
+    };
+    fetchUserSignature();
   }, [id]);
 
   const handleApprove = async () => {
@@ -484,7 +505,73 @@ const CaseVerification = () => {
               </Button>
             </Box>
           )}
+
+        {/* View Previous History Button */}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-start', mt: 3 }}>
+          <Button
+            variant="outlined"
+            startIcon={<HistoryIcon />}
+            onClick={() => setOpenHistoryDialog(true)}
+            sx={{ borderColor: '#1a237e', color: '#1a237e' }}
+          >
+            View Previous History & Signatures
+          </Button>
+        </Box>
       </Paper>
+
+      {/* Previous History Dialog */}
+      <Dialog
+        open={openHistoryDialog}
+        onClose={() => setOpenHistoryDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <HistoryIcon />
+            Previous Case History & Signatures
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {caseData?.documents?.map((doc, i) => (
+            <Paper key={i} sx={{ p: 2, mb: 2, bgcolor: '#f5f5f5' }}>
+              <Typography variant="subtitle2">
+                {doc.name || `Document ${i + 1}`}
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                Type: {doc.type || 'N/A'} | Validated: {doc.validated ? 'Yes' : 'No'}
+              </Typography>
+              {doc.signatureHistory && doc.signatureHistory.length > 0 && (
+                <Box sx={{ mt: 1, pl: 2, borderLeft: '3px solid #1a237e' }}>
+                  <Typography variant="caption" color="primary" sx={{ fontWeight: 'bold' }}>
+                    Signature History:
+                  </Typography>
+                  {doc.signatureHistory.map((sig, j) => (
+                    <Box key={j} sx={{ mt: 0.5 }}>
+                      <Typography variant="caption" display="block">
+                        Signer: {sig.stampReporterId || sig.signer || 'N/A'}
+                      </Typography>
+                      <Typography variant="caption" display="block" sx={{ fontFamily: 'monospace' }}>
+                        Hash: {sig.signatureHash || sig.signature || 'N/A'}
+                      </Typography>
+                      <Typography variant="caption" display="block" color="textSecondary">
+                        {sig.timestamp ? formatDate(sig.timestamp) : 'N/A'}
+                        {sig.comments && ` — ${sig.comments}`}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Paper>
+          ))}
+          {(!caseData?.documents || caseData.documents.length === 0) && (
+            <Typography color="textSecondary">No documents or signatures found.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenHistoryDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Digital Signature Dialog (Approve) */}
       <Dialog
@@ -493,19 +580,29 @@ const CaseVerification = () => {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Digital Signature Required</DialogTitle>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <FingerprintIcon color="success" />
+            Digital Signature Required
+          </Box>
+        </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Please enter your digital signature to approve and forward this case.
+            Your digital signature has been auto-filled from your profile. This ensures only your authenticated signature is used.
           </Typography>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            This signature is uniquely tied to your account and cannot be changed.
+          </Alert>
           <TextField
-            autoFocus
             margin="dense"
             label="Digital Signature"
-            type="password"
             fullWidth
             value={digitalSignature}
-            onChange={(e) => setDigitalSignature(e.target.value)}
+            InputProps={{
+              readOnly: true,
+              startAdornment: <FingerprintIcon sx={{ mr: 1, color: '#388e3c' }} />,
+            }}
+            sx={{ '& .MuiInputBase-input': { fontFamily: 'monospace', letterSpacing: 1 } }}
             disabled={actionLoading}
           />
         </DialogContent>

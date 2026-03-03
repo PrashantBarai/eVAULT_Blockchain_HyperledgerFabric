@@ -266,17 +266,17 @@
 #                           source ./deploy_chaincode.sh package judge
 #      NOTE: Packaging automatically increments version (e.g., lawyer_1.tgz → lawyer_2.tgz)
 #
-#   2. Install per org:     source ./deploy_chaincode.sh install lawyer
-#                           source ./deploy_chaincode.sh install registrar
-#                           source ./deploy_chaincode.sh install stampreporter
-#                           source ./deploy_chaincode.sh install benchclerk
-#                           source ./deploy_chaincode.sh install judge
+#   2. Install per org:     source ./deploy_chaincode.sh install lawyerorg
+#                           source ./deploy_chaincode.sh install registrarorg
+#                           source ./deploy_chaincode.sh install stampreporterorg
+#                           source ./deploy_chaincode.sh install benchclerkorg
+#                           source ./deploy_chaincode.sh install judgeorg
 #   3. Export package IDs after each installation (prompted automatically)
-#   4. Deploy per org:      source ./deploy_chaincode.sh deploy lawyer
-#                           source ./deploy_chaincode.sh deploy registrar
-#                           source ./deploy_chaincode.sh deploy stampreporter
-#                           source ./deploy_chaincode.sh deploy benchclerk
-#                           source ./deploy_chaincode.sh deploy judge
+#   4. Deploy per org:      source ./deploy_chaincode.sh deploy lawyerorg
+#                           source ./deploy_chaincode.sh deploy registrarorg
+#                           source ./deploy_chaincode.sh deploy stampreporterorg
+#                           source ./deploy_chaincode.sh deploy benchclerkorg
+#                           source ./deploy_chaincode.sh deploy judgeorg
 #
 # =============================================================================
 # APPROVE-CHAINCODE COMMAND - For Cross-Org Chaincode Approvals
@@ -301,9 +301,9 @@
 # After LawyersOrg runs: source ./deploy_chaincode.sh upgrade lawyer
 #
 # These orgs must approve the "lawyer" chaincode on their shared channels:
-#   RegistrarsOrg:     source ./deploy_chaincode.sh approve-chaincode registrar lawyer lawyer-registrar-channel
-#   StampReportersOrg: source ./deploy_chaincode.sh approve-chaincode stampreporter lawyer stampreporter-lawyer-channel
-#   BenchClerksOrg:    source ./deploy_chaincode.sh approve-chaincode benchclerk lawyer benchclerk-lawyer-channel
+#   RegistrarsOrg:     source ./deploy_chaincode.sh approve-chaincode registrarorg lawyer lawyer-registrar-channel
+#   StampReportersOrg: source ./deploy_chaincode.sh approve-chaincode stampreporterorg lawyer stampreporter-lawyer-channel
+#   BenchClerksOrg:    source ./deploy_chaincode.sh approve-chaincode benchclerkorg lawyer benchclerk-lawyer-channel
 #
 # -----------------------------------------------------------------------------
 # SCENARIO 2: RegistrarsOrg upgrades "registrar" chaincode
@@ -311,8 +311,8 @@
 # After RegistrarsOrg runs: source ./deploy_chaincode.sh upgrade registrar
 #
 # These orgs must approve the "registrar" chaincode on their shared channels:
-#   LawyersOrg:        source ./deploy_chaincode.sh approve-chaincode lawyer registrar lawyer-registrar-channel
-#   StampReportersOrg: source ./deploy_chaincode.sh approve-chaincode stampreporter registrar registrar-stampreporter-channel
+#   LawyersOrg:        source ./deploy_chaincode.sh approve-chaincode lawyerorg registrar lawyer-registrar-channel
+#   StampReportersOrg: source ./deploy_chaincode.sh approve-chaincode stampreporterorg registrar registrar-stampreporter-channel
 #
 # -----------------------------------------------------------------------------
 # SCENARIO 3: StampReportersOrg upgrades "stampreporter" chaincode
@@ -320,9 +320,9 @@
 # After StampReportersOrg runs: source ./deploy_chaincode.sh upgrade stampreporter
 #
 # These orgs must approve the "stampreporter" chaincode on their shared channels:
-#   RegistrarsOrg:  source ./deploy_chaincode.sh approve-chaincode registrar stampreporter registrar-stampreporter-channel
-#   LawyersOrg:     source ./deploy_chaincode.sh approve-chaincode lawyer stampreporter stampreporter-lawyer-channel
-#   BenchClerksOrg: source ./deploy_chaincode.sh approve-chaincode benchclerk stampreporter stampreporter-benchclerk-channel
+#   RegistrarsOrg:  source ./deploy_chaincode.sh approve-chaincode registrarorg stampreporter registrar-stampreporter-channel
+#   LawyersOrg:     source ./deploy_chaincode.sh approve-chaincode lawyerorg stampreporter stampreporter-lawyer-channel
+#   BenchClerksOrg: source ./deploy_chaincode.sh approve-chaincode benchclerkorg stampreporter stampreporter-benchclerk-channel
 #
 # -----------------------------------------------------------------------------
 # SCENARIO 4: BenchClerksOrg upgrades "benchclerk" chaincode
@@ -330,9 +330,9 @@
 # After BenchClerksOrg runs: source ./deploy_chaincode.sh upgrade benchclerk
 #
 # These orgs must approve the "benchclerk" chaincode on their shared channels:
-#   StampReportersOrg: source ./deploy_chaincode.sh approve-chaincode stampreporter benchclerk stampreporter-benchclerk-channel
-#   JudgesOrg:         source ./deploy_chaincode.sh approve-chaincode judge benchclerk benchclerk-judge-channel
-#   LawyersOrg:        source ./deploy_chaincode.sh approve-chaincode lawyer benchclerk benchclerk-lawyer-channel
+#   StampReportersOrg: source ./deploy_chaincode.sh approve-chaincode stampreporterorg benchclerk stampreporter-benchclerk-channel
+#   JudgesOrg:         source ./deploy_chaincode.sh approve-chaincode judgeorg benchclerk benchclerk-judge-channel
+#   LawyersOrg:        source ./deploy_chaincode.sh approve-chaincode lawyerorg benchclerk benchclerk-lawyer-channel
 #
 # -----------------------------------------------------------------------------
 # SCENARIO 5: JudgesOrg upgrades "judge" chaincode
@@ -340,7 +340,7 @@
 # After JudgesOrg runs: source ./deploy_chaincode.sh upgrade judge
 #
 # These orgs must approve the "judge" chaincode on their shared channels:
-#   BenchClerksOrg: source ./deploy_chaincode.sh approve-chaincode benchclerk judge benchclerk-judge-channel
+#   BenchClerksOrg: source ./deploy_chaincode.sh approve-chaincode benchclerkorg judge benchclerk-judge-channel
 #
 # -----------------------------------------------------------------------------
 # IMPORTANT NOTES:
@@ -3047,7 +3047,7 @@ show_pending_approvals() {
     
     # Define which chaincodes each org needs and on which channels
     case $org in
-        lawyer)
+        lawyerorg)
             echo "LawyersOrg channels and chaincodes:"
             echo "  lawyer-registrar-channel: lawyer (owner), registrar"
             echo "  stampreporter-lawyer-channel: lawyer (owner), stampreporter"
@@ -3058,7 +3058,7 @@ show_pending_approvals() {
             check_readiness "stampreporter-lawyer-channel" "stampreporter" 2>/dev/null || true
             check_readiness "benchclerk-lawyer-channel" "benchclerk" 2>/dev/null || true
             ;;
-        registrar)
+        registrarorg)
             echo "RegistrarsOrg channels and chaincodes:"
             echo "  lawyer-registrar-channel: registrar (owner), lawyer"
             echo "  registrar-stampreporter-channel: registrar (owner), stampreporter"
@@ -3067,7 +3067,7 @@ show_pending_approvals() {
             check_readiness "lawyer-registrar-channel" "lawyer" 2>/dev/null || true
             check_readiness "registrar-stampreporter-channel" "stampreporter" 2>/dev/null || true
             ;;
-        stampreporter)
+        stampreporterorg)
             echo "StampReportersOrg channels and chaincodes:"
             echo "  registrar-stampreporter-channel: stampreporter (owner), registrar"
             echo "  stampreporter-lawyer-channel: stampreporter (owner), lawyer"
@@ -3078,7 +3078,7 @@ show_pending_approvals() {
             check_readiness "stampreporter-lawyer-channel" "lawyer" 2>/dev/null || true
             check_readiness "stampreporter-benchclerk-channel" "benchclerk" 2>/dev/null || true
             ;;
-        benchclerk)
+        benchclerkorg)
             echo "BenchClerksOrg channels and chaincodes:"
             echo "  stampreporter-benchclerk-channel: benchclerk (owner), stampreporter"
             echo "  benchclerk-judge-channel: benchclerk (owner), judge"
@@ -3089,7 +3089,7 @@ show_pending_approvals() {
             check_readiness "benchclerk-judge-channel" "judge" 2>/dev/null || true
             check_readiness "benchclerk-lawyer-channel" "lawyer" 2>/dev/null || true
             ;;
-        judge)
+        judgeorg)
             echo "JudgesOrg channels and chaincodes:"
             echo "  benchclerk-judge-channel: judge (owner), benchclerk"
             echo ""

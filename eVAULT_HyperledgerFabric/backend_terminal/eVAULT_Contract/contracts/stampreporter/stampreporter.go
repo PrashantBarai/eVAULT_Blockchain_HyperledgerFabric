@@ -162,7 +162,7 @@ func (s *StampReporterContract) ValidateDocuments(ctx contractapi.TransactionCon
 	// Update case status based on validation
 	if details.IsValid {
 		caseObj.Status = "VALIDATED_BY_STAMP_REPORTER"
-		caseObj.CurrentOrg = "BenchClerksOrg"
+		caseObj.CurrentOrg = "StampReportersOrg"
 	} else {
 		caseObj.Status = "REJECTED_BY_STAMP_REPORTER"
 		caseObj.CurrentOrg = "LawyersOrg"

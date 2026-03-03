@@ -61,6 +61,7 @@ const Sidebar = () => {
           { text: 'Dashboard', icon: <DashboardIcon />, path: '/judge/dashboard' },
           { text: 'Case Review', icon: <GavelIcon />, path: '/judge/case-review' },
           { text: 'Case Status', icon: <AssignmentIcon />, path: '/judge/case-status' },
+          { text: 'Judged Cases', icon: <VerifiedIcon />, path: '/judge/judged-cases' },
           { text: 'Notifications', icon: <NotificationsIcon />, path: '/judge/notifications' },
           { text: 'Profile', icon: <PersonIcon />, path: '/judge/profile' },
         ];
@@ -104,25 +105,25 @@ const Sidebar = () => {
   };
 
   let menuItems = getMenuItems(
-    isLawyerSection ? 'lawyer' : 
-    isRegistrarSection ? 'registrar' : 
-    isStampReporterSection ? 'stampreporter' : 
-    isBenchClerkSection ? 'benchclerk' :
-    isJudgeSection ? 'judge' : 'lawyer'
+    isLawyerSection ? 'lawyer' :
+      isRegistrarSection ? 'registrar' :
+        isStampReporterSection ? 'stampreporter' :
+          isBenchClerkSection ? 'benchclerk' :
+            isJudgeSection ? 'judge' : 'lawyer'
   );
   let sectionColor = getThemeColor(
-    isLawyerSection ? 'lawyer' : 
-    isRegistrarSection ? 'registrar' : 
-    isStampReporterSection ? 'stampreporter' : 
-    isBenchClerkSection ? 'benchclerk' :
-    isJudgeSection ? 'judge' : 'lawyer'
+    isLawyerSection ? 'lawyer' :
+      isRegistrarSection ? 'registrar' :
+        isStampReporterSection ? 'stampreporter' :
+          isBenchClerkSection ? 'benchclerk' :
+            isJudgeSection ? 'judge' : 'lawyer'
   );
   let sectionTitle = getSectionTitle(
-    isLawyerSection ? 'lawyer' : 
-    isRegistrarSection ? 'registrar' : 
-    isStampReporterSection ? 'stampreporter' : 
-    isBenchClerkSection ? 'benchclerk' :
-    isJudgeSection ? 'judge' : 'lawyer'
+    isLawyerSection ? 'lawyer' :
+      isRegistrarSection ? 'registrar' :
+        isStampReporterSection ? 'stampreporter' :
+          isBenchClerkSection ? 'benchclerk' :
+            isJudgeSection ? 'judge' : 'lawyer'
   );
 
   return (
